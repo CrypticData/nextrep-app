@@ -17,6 +17,11 @@ enum WeightUnit {
   kg
 }
 
+enum WorkoutStatus {
+  active
+  completed
+}
+
 model AppSettings {
   id                Int        @id @default(1)
   defaultWeightUnit WeightUnit @default(lbs) @map("default_weight_unit")
@@ -79,4 +84,17 @@ model ExerciseSecondaryMuscleGroup {
   @@unique([exerciseId, muscleGroupId])
   @@index([muscleGroupId])
   @@map("exercise_secondary_muscle_groups")
+}
+
+model WorkoutSession {
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String?
+  description String?
+  status      WorkoutStatus @default(active)
+  startedAt   DateTime      @default(now()) @map("started_at") @db.Timestamptz(6)
+  endedAt     DateTime?     @map("ended_at") @db.Timestamptz(6)
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("workout_sessions")
 }

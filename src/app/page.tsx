@@ -1,5 +1,5 @@
-import { ExerciseLibraryApp } from "./exercise-library-app";
+import { WorkoutApp } from "./workout-app";
 
 export default function Home() {
-  return <ExerciseLibraryApp />;
+  return <WorkoutApp />;
 }

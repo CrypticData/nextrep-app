@@ -89,8 +89,56 @@ This file records workspace changes made by Codex and Claude so future sessions 
 - Logging convention going forward: agents should append a HANDOFF.md entry whenever they commit, push, branch, or otherwise touch git state, not just code, so the log captures repo history alongside file changes. (Updated CLAUDE.md to reflect this.)
 - Follow-up commit after the bundled Phase 1+2 push: committed the CLAUDE.md handoff-logging tweak and these HANDOFF.md entries as their own small commit, then pushed. Working tree clean afterward.
 
+## 2026-04-26 (Codex)
+
+- Implemented Phase 3 start/recovery scope:
+  - Added Prisma `WorkoutStatus` and `WorkoutSession` mapped to `workout_sessions`.
+  - Added migration `20260426130000_add_workout_sessions` with `WorkoutStatus`, `workout_sessions`, and raw partial unique index `one_active_workout`.
+  - Added `src/lib/workout-session-api.ts` for snake_case response mapping, UUID validation, active-session lookup, create-or-return-active, and active-session discard.
+  - Added `POST /api/workout-sessions`, `GET /api/workout-sessions/active`, and `POST /api/workout-sessions/[id]/discard`.
+  - Added shared `AppShell` with route-backed bottom nav and moved Exercise Library to `/exercises`; `/` is now the Workout surface.
+  - Added timer-only Workout UI with explicit resume card on refresh, local elapsed timer from `started_at`, empty Phase 4 placeholder, and confirmed discard action. No workout exercises, sets, finish/save, autosync, or minimize/floating-card controls were added.
+- Validation completed:
+  - `npx prisma validate` passed.
+  - `npx prisma migrate dev` applied `20260426130000_add_workout_sessions`.
+  - `npx prisma generate` completed.
+  - `npx prisma migrate status` reports 2 migrations and DB schema up to date.
+  - `npm run lint` passed.
+  - `npm run build` passed.
+  - Restarted the app container after Prisma generation so dev mode loaded the new `workoutSession` delegate.
+- API checks completed:
+  - `GET /api/workout-sessions/active` returned `null` with no active session.
+  - `POST /api/workout-sessions` created active session `411d6e91-f73b-424d-9494-e7bbb8ad535a` with `201`.
+  - Repeated `POST /api/workout-sessions` returned the same active session with `200`.
+  - Direct DB insert of a second `active` row failed on unique constraint `one_active_workout`.
+  - `GET /api/workout-sessions/active` returned the active session.
+  - `POST /api/workout-sessions/411d6e91-f73b-424d-9494-e7bbb8ad535a/discard` returned `204`; repeating it returned `404`.
+  - Discarding a direct DB-created `completed` session returned `404`; the completed test row was deleted afterward.
+  - Existing Exercise API create/patch/delete flow passed with temporary `__phase3_api_test` row, then cleaned up.
+- UI/server checks:
+  - `GET /` returned `200` and server-rendered the Workout shell.
+  - `GET /exercises` returned `200` and server-rendered the Exercise Library shell with route-backed nav.
+  - Browser automation was not run; interaction behavior was covered through API checks and successful build/lint.
+- Follow-up after user testing:
+  - User confirmed Start Empty Workout and Discard Workout work in the browser.
+  - User initially reported the timer looked stopped, then confirmed they could see it running.
+  - Adjusted `useElapsedSeconds` in `src/app/workout-app.tsx` to keep explicit elapsed-seconds state updated from an interval callback keyed by `started_at`.
+  - Re-ran `npm run lint` and `npm run build`; both passed.
+
+## 2026-04-26 (Claude)
+
+- Reviewed Codex's Phase 3 implementation against the plan in `phases/phase3.md` and the v2 spec. Findings:
+  - Schema, migration (including the raw partial unique index), and snake_case JSON match the spec exactly.
+  - `createOrReturnActiveWorkoutSession` handles the unique-violation race correctly (catches `P2002` and re-fetches).
+  - Discard route validates UUID, returns 400/404/204; only `active` rows can be discarded.
+  - `useElapsedSeconds` computes elapsed from `started_at` client-side; no timer ticks persisted (hard-rule compliant).
+  - `AppShell` uses Next.js `Link` + `usePathname` for tab routing — App Router idiomatic.
+  - Exercise Library refactor cleanly removed its local `BottomNav` and uses the AppShell `action` slot.
+  - One UX gap surfaced: Resume card has no Discard button, so stale-session cleanup takes two taps (Resume → live shell → Discard). User chose to leave it for now.
+- Committed Phase 3 + the planning doc, pushed to `origin/main`. No code changes from Claude in this pass beyond this log entry.
+
 ## Current Known Git Status
 
-- All Phase 1, Phase 2, dev-server fix, UI cleanup, tooling, and spec changes are now committed and pushed to `origin/main` as commit `4b20cd7`.
-- Working tree is clean apart from any new entries to `HANDOFF.md` made after the push.
-- Branch: `main`, in sync with `origin/main` on GitHub (`CrypticData/nextrep-app`).
+- Branch: `main`, tracking `origin/main`.
+- Phase 1, Phase 2, and Phase 3 are all committed and pushed.
+- `phases/phase3.md` is now in git as part of the Phase 3 push.

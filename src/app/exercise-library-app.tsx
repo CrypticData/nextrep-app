@@ -7,6 +7,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
+import { AppShell } from "./app-shell";
 
 type Reference = {
   id: string;
@@ -38,13 +39,6 @@ type ModalMode =
       kind: "edit";
       exercise: Exercise;
     };
-
-const navItems = [
-  { label: "Workout", icon: PlayIcon },
-  { label: "Exercises", icon: DumbbellIcon },
-  { label: "History", icon: ClockIcon },
-  { label: "Settings", icon: SettingsIcon },
-];
 
 export function ExerciseLibraryApp() {
   const [exercises, setExercises] = useState<Exercise[]>([]);
@@ -189,31 +183,21 @@ export function ExerciseLibraryApp() {
   }
 
   return (
-    <div className="min-h-dvh bg-[#050505] text-zinc-50">
-      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-[#101010] shadow-2xl shadow-black/40">
-        <header className="border-b border-white/10 px-5 pb-4 pt-6">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300/70">
-                NextRep
-              </p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-normal text-white">
-                Exercises
-              </h1>
-            </div>
-            <button
-              type="button"
-              onClick={() => setModalMode({ kind: "create" })}
-              className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-950/50 transition active:scale-95 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
-              disabled={equipmentTypes.length === 0 || muscleGroups.length === 0}
-              aria-label="Create exercise"
-            >
-              <PlusIcon className="h-5 w-5" />
-            </button>
-          </div>
-        </header>
-
-        <main className="flex-1 overflow-y-auto px-5 pb-6 pt-4">
+    <>
+      <AppShell
+        title="Exercises"
+        action={
+          <button
+            type="button"
+            onClick={() => setModalMode({ kind: "create" })}
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-950/50 transition active:scale-95 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+            disabled={equipmentTypes.length === 0 || muscleGroups.length === 0}
+            aria-label="Create exercise"
+          >
+            <PlusIcon className="h-5 w-5" />
+          </button>
+        }
+      >
           {selectedExercise ? (
             <ExerciseDetail
               actionError={actionError}
@@ -244,10 +228,7 @@ export function ExerciseLibraryApp() {
               totalExerciseCount={exercises.length}
             />
           )}
-        </main>
-
-        <BottomNav />
-      </div>
+      </AppShell>
 
       {modalMode ? (
         <ExerciseModal
@@ -258,7 +239,7 @@ export function ExerciseLibraryApp() {
           onSave={handleSaveExercise}
         />
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -906,33 +887,6 @@ function ExerciseThumb({
   );
 }
 
-function BottomNav() {
-  return (
-    <nav className="sticky bottom-0 z-20 grid grid-cols-4 border-t border-white/10 bg-[#111]/95 px-2 pb-3 pt-2 backdrop-blur">
-      {navItems.map((item) => {
-        const active = item.label === "Exercises";
-        const Icon = item.icon;
-
-        return (
-          <button
-            type="button"
-            key={item.label}
-            disabled={!active}
-            className={
-              active
-                ? "flex flex-col items-center gap-1 rounded-2xl px-2 py-2 text-emerald-300"
-                : "flex flex-col items-center gap-1 rounded-2xl px-2 py-2 text-zinc-600"
-            }
-          >
-            <Icon className="h-5 w-5" />
-            <span className="text-[11px] font-semibold">{item.label}</span>
-          </button>
-        );
-      })}
-    </nav>
-  );
-}
-
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
 
@@ -1167,63 +1121,6 @@ function DumbbellIcon({ className }: IconProps) {
     >
       <path
         d="M6 7v10M18 7v10M3 9v6M21 9v6M7 12h10"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="2"
-      />
-    </svg>
-  );
-}
-
-function PlayIcon({ className }: IconProps) {
-  return (
-    <svg
-      className={className}
-      fill="none"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-    >
-      <path
-        d="M8 5v14l11-7L8 5Z"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="2"
-      />
-    </svg>
-  );
-}
-
-function ClockIcon({ className }: IconProps) {
-  return (
-    <svg
-      className={className}
-      fill="none"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-    >
-      <path
-        d="M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="2"
-      />
-    </svg>
-  );
-}
-
-function SettingsIcon({ className }: IconProps) {
-  return (
-    <svg
-      className={className}
-      fill="none"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-    >
-      <path
-        d="M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8ZM4 12h2M18 12h2M12 4v2M12 18v2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M17.7 6.3l-1.4 1.4M7.7 16.3l-1.4 1.4"
         stroke="currentColor"
         strokeLinecap="round"
         strokeLinejoin="round"
