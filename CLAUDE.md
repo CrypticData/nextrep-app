@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+<!-- BEGIN:nextjs-agent-rules -->
+## This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
+<!-- END:nextjs-agent-rules -->
+
 ## What this project is
 
 NextRep is a single-user, self-hosted workout tracker. Accessed from a phone browser, optimized for live workout logging at the gym. Always-on Docker deployment on a personal server, accessed via Tailscale only — no public internet exposure, no auth in MVP.
@@ -10,14 +16,20 @@ NextRep is a single-user, self-hosted workout tracker. Accessed from a phone bro
 
 ## Repo state
 
-Phase 0 complete. The repo is now a runnable Next.js app with Prisma wired up to a Postgres container. No tables yet — Phase 1 adds reference data (equipment types, muscle groups, app settings).
+Phase 2 complete. The repo is a runnable Next.js app with Prisma wired up to Postgres, reference/settings tables and seed data in place, and Exercise Library CRUD implemented with DB-backed APIs and a production mobile UI.
 
 Current top-level files:
 
-- `nextrep-app_planning_schema.md` — ~2900-line engineering spec (authoritative for everything below)
+- `workout_app_planning_schema_v2.md` — current authoritative engineering spec, including finalized Next.js + Prisma guidance and Prisma implementation documentation
+- `nextrep-app_planning_schema.md` — older v1 engineering spec retained for reference; superseded by `workout_app_planning_schema_v2.md`
 - `prototype/` — visual reference only (HTML prototype + iOS frame, hardcoded mock data)
 - `src/app/`, `src/lib/`, `prisma/`, `Dockerfile`, `docker-compose.yml`, `.env.example` — the actual app
-- `README.md`, `CLAUDE.md`, `AGENTS.md` (Next 16 breaking-change notes from `create-next-app`)
+- `README.md`, `CLAUDE.md`, `AGENTS.md` (symlink to `CLAUDE.md` so agents share one instruction source)
+- `HANDOFF.md` — shared workspace-change log for Codex and Claude (each dated section is tagged with the author)
+
+## Handoff logging
+
+After every meaningful repo change or validation pass, append a concise entry to `HANDOFF.md` in the same turn. Use a dated section heading tagged with your agent name: `## YYYY-MM-DD (Codex)` or `## YYYY-MM-DD (Claude)`. If a section for today already exists from another agent, add a new same-day section with your tag rather than mixing entries. Include what changed, what was validated, and any known remaining state or caveats. Keep the "Current Known Git Status" section at the bottom up to date.
 
 ## Common commands
 
@@ -35,20 +47,21 @@ The health endpoint at `/api/health` reports whether the app can reach the datab
 
 ## Stack (locked in)
 
-- **Framework:** Next.js 16 (App Router) + TypeScript, strict mode. React 19. **Note:** Next 16 has breaking changes from Next 15 — see `AGENTS.md` and `node_modules/next/dist/docs/` before assuming older patterns still apply.
+- **Framework:** Next.js 16 (App Router) + TypeScript, strict mode. React 19. **Note:** Next 16 has breaking changes from Next 15 — see the local Next.js agent rules above and `node_modules/next/dist/docs/` before assuming older patterns still apply.
 - **UI:** Tailwind CSS v4 (PostCSS plugin), mobile-first, dark-theme-first
 - **ORM:** Prisma 7 — uses the new `prisma-client` generator (not `prisma-client-js`); client is generated to `src/generated/prisma` and imported as `@/generated/prisma`. Config lives in `prisma.config.ts` (not legacy `package.json#prisma`). `.env` is loaded via `dotenv/config` in that file.
 - **Database:** PostgreSQL 17 (use `gen_random_uuid()` from `pgcrypto` for UUID PKs per schema §4.1)
 - **Deployment:** Docker Compose, 2 services (`db`, `app`). `db` host is `db` inside compose, `localhost` outside.
 
-The planning schema's §2 chapter recommends React+Vite+FastAPI; that recommendation is **superseded**. Schema §3–§9 (data model, behavior, API) remain authoritative.
+The v2 planning schema's §2 is current: Next.js App Router + TypeScript, Tailwind CSS, Prisma, PostgreSQL, and Docker Compose. Do not use the older React + Vite + FastAPI recommendation from v1.
 
-## Authoritative spec — `nextrep-app_planning_schema.md`
+## Authoritative spec — `workout_app_planning_schema_v2.md`
 
 Read the relevant section **before** suggesting any change to data model, validation, or product behavior:
 
 | Section | Topic |
 |---|---|
+| §2 | Final tech stack and what changed from the older React + Vite + FastAPI recommendation |
 | §1.3 / §1.4 / §11 | MVP scope vs. post-MVP (routines, rest timer, Previous column, analytics, variants are post-MVP) |
 | §3 | Domain concepts (workout session, workout exercise, workout set, snapshots) |
 | §4 | PostgreSQL DDL — translate to Prisma schema preserving constraints |
@@ -59,6 +72,8 @@ Read the relevant section **before** suggesting any change to data model, valida
 | §12 | Phased build order (Phases 0–14) |
 | §14 | 22-item MVP completion checklist |
 | §15 | Hard implementation rules (see below) |
+| §16 | Prisma enums/models, raw SQL migration requirements, seed data, migration workflow, and service logic required beyond Prisma |
+| §17 | Final build sequence summary |
 
 ## Hard rules (schema §15) — do not violate
 

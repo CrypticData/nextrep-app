@@ -11,3 +11,72 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum WeightUnit {
+  lbs
+  kg
+}
+
+model AppSettings {
+  id                Int        @id @default(1)
+  defaultWeightUnit WeightUnit @default(lbs) @map("default_weight_unit")
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("app_settings")
+}
+
+model EquipmentType {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  exercises Exercise[]
+
+  @@map("equipment_types")
+}
+
+model MuscleGroup {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  primaryExercises   Exercise[]                       @relation("PrimaryMuscleGroup")
+  secondaryExercises ExerciseSecondaryMuscleGroup[]
+
+  @@map("muscle_groups")
+}
+
+model Exercise {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                 String
+  description          String?
+  equipmentTypeId      String   @map("equipment_type_id") @db.Uuid
+  primaryMuscleGroupId String   @map("primary_muscle_group_id") @db.Uuid
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  equipmentType      EquipmentType @relation(fields: [equipmentTypeId], references: [id])
+  primaryMuscleGroup MuscleGroup   @relation("PrimaryMuscleGroup", fields: [primaryMuscleGroupId], references: [id])
+  secondaryMuscles   ExerciseSecondaryMuscleGroup[]
+
+  @@index([equipmentTypeId])
+  @@index([primaryMuscleGroupId])
+  @@map("exercises")
+}
+
+model ExerciseSecondaryMuscleGroup {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  exerciseId    String   @map("exercise_id") @db.Uuid
+  muscleGroupId String   @map("muscle_group_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  exercise    Exercise    @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  muscleGroup MuscleGroup @relation(fields: [muscleGroupId], references: [id])
+
+  @@unique([exerciseId, muscleGroupId])
+  @@index([muscleGroupId])
+  @@map("exercise_secondary_muscle_groups")
+}
