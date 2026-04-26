@@ -10,22 +10,36 @@ NextRep is a single-user, self-hosted workout tracker. Accessed from a phone bro
 
 ## Repo state
 
-The repo is **pre-scaffold**. There is no `package.json`, `tsconfig.json`, Next.js project, Prisma schema, or Docker config yet. The current files are:
+Phase 0 complete. The repo is now a runnable Next.js app with Prisma wired up to a Postgres container. No tables yet — Phase 1 adds reference data (equipment types, muscle groups, app settings).
+
+Current top-level files:
 
 - `nextrep-app_planning_schema.md` — ~2900-line engineering spec (authoritative for everything below)
-- `nextrep-app.html` — single-file React 18 prototype (CDN React + Babel standalone, hardcoded mock data) — **visual reference only**
-- `ios-frame.jsx` — iOS 26 device frame for previewing the prototype — visual reference only
-- `README.md`, `.gitignore`
+- `prototype/` — visual reference only (HTML prototype + iOS frame, hardcoded mock data)
+- `src/app/`, `src/lib/`, `prisma/`, `Dockerfile`, `docker-compose.yml`, `.env.example` — the actual app
+- `README.md`, `CLAUDE.md`, `AGENTS.md` (Next 16 breaking-change notes from `create-next-app`)
 
-Build/lint/test commands will exist once the Next.js scaffold lands. Do not invent commands until then.
+## Common commands
+
+```sh
+docker compose up                # full stack (app + db) — visit localhost:3000
+docker compose up -d db          # just the database (faster local dev)
+npm run dev                      # next dev (after `docker compose up -d db`)
+npm run build                    # production build
+npm run lint                     # ESLint
+npx prisma generate              # regenerate Prisma client after schema.prisma changes
+npx prisma migrate dev --name X  # create and apply a new migration
+```
+
+The health endpoint at `/api/health` reports whether the app can reach the database — useful sanity check after any infra change.
 
 ## Stack (locked in)
 
-- **Framework:** Next.js 15 (App Router) + TypeScript, strict mode
-- **UI:** Tailwind CSS, mobile-first, dark-theme-first
-- **ORM:** Prisma
-- **Database:** PostgreSQL (use `gen_random_uuid()` from `pgcrypto` for UUID PKs per schema §4.1)
-- **Deployment:** Docker Compose, 2 services (`app`, `postgres`)
+- **Framework:** Next.js 16 (App Router) + TypeScript, strict mode. React 19. **Note:** Next 16 has breaking changes from Next 15 — see `AGENTS.md` and `node_modules/next/dist/docs/` before assuming older patterns still apply.
+- **UI:** Tailwind CSS v4 (PostCSS plugin), mobile-first, dark-theme-first
+- **ORM:** Prisma 7 — uses the new `prisma-client` generator (not `prisma-client-js`); client is generated to `src/generated/prisma` and imported as `@/generated/prisma`. Config lives in `prisma.config.ts` (not legacy `package.json#prisma`). `.env` is loaded via `dotenv/config` in that file.
+- **Database:** PostgreSQL 17 (use `gen_random_uuid()` from `pgcrypto` for UUID PKs per schema §4.1)
+- **Deployment:** Docker Compose, 2 services (`db`, `app`). `db` host is `db` inside compose, `localhost` outside.
 
 The planning schema's §2 chapter recommends React+Vite+FastAPI; that recommendation is **superseded**. Schema §3–§9 (data model, behavior, API) remain authoritative.
 
@@ -59,7 +73,7 @@ Read the relevant section **before** suggesting any change to data model, valida
 
 ## Prototype is reference, not source
 
-`nextrep-app.html` and `ios-frame.jsx` are visual/interaction references for layout, dark theme, set row UI, bottom nav placement, and the live workout screen. Do not lift code directly. Specifically ignore:
+`prototype/nextrep-app.html` and `prototype/ios-frame.jsx` are visual/interaction references for layout, dark theme, set row UI, bottom nav placement, and the live workout screen. Do not lift code directly. Specifically ignore:
 
 - Hardcoded arrays: `chartData`, `exercises`, `workoutLog`, `routines`, `catColors`, `EX_HISTORY`, `FOLDERS` — **not seed data**. Users create their own exercises in MVP; routines and folders are post-MVP.
 - Tweak panel and `window.postMessage` edit-mode integration — prototype scaffolding only.
