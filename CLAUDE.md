@@ -29,7 +29,7 @@ Current top-level files:
 
 ## Handoff logging
 
-After every meaningful repo change or validation pass, append a concise entry to `HANDOFF.md` in the same turn. Use a dated section heading tagged with your agent name: `## YYYY-MM-DD (Codex)` or `## YYYY-MM-DD (Claude)`. If a section for today already exists from another agent, add a new same-day section with your tag rather than mixing entries. Include what changed, what was validated, and any known remaining state or caveats. Keep the "Current Known Git Status" section at the bottom up to date.
+After every meaningful repo change, validation pass, or git operation (commit, push, branch, merge, rebase, tag), append a concise entry to `HANDOFF.md` in the same turn. Use a dated section heading tagged with your agent name: `## YYYY-MM-DD (Codex)` or `## YYYY-MM-DD (Claude)`. If a section for today already exists from another agent, add a new same-day section with your tag rather than mixing entries. Include what changed, what was validated, any commit hashes/branch state worth knowing, and any remaining caveats. Keep the "Current Known Git Status" section at the bottom up to date.
 
 ## Common commands
 

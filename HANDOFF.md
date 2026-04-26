@@ -81,13 +81,16 @@ This file records workspace changes made by Codex and Claude so future sessions 
   - Claude removed the redundant inline Create pill from the Exercise Library list; the header `+` is now the main create entry point, with the empty-state CTA retained.
 - No source code was changed in this Codex context-refresh pass beyond this handoff log entry.
 
+## 2026-04-26 (Claude)
+
+- Committed and pushed everything that was sitting in the working tree: Phase 1 reference data, Phase 2 Exercise Library CRUD + UI, the `next.config.ts` dev-server fix, the inline-Create-pill removal, the `AGENTS.md` → `CLAUDE.md` symlink, the v2 planning schema, the ESLint `prototype/**` ignore, and the new `HANDOFF.md` itself.
+- One bundled commit (`4b20cd7`, branch `main`) titled "Phase 1 & 2: reference data and Exercise Library CRUD"; staged files explicitly (no `git add -A`) to avoid sweeping anything unintended into the commit.
+- Pushed to `git@github.com:CrypticData/nextrep-app.git` `main`. Fast-forward from `eb85ed4` to `4b20cd7`. No force-push, no hooks skipped.
+- Logging convention going forward: agents should append a HANDOFF.md entry whenever they commit, push, branch, or otherwise touch git state, not just code, so the log captures repo history alongside file changes. (Updated CLAUDE.md to reflect this.)
+- Follow-up commit after the bundled Phase 1+2 push: committed the CLAUDE.md handoff-logging tweak and these HANDOFF.md entries as their own small commit, then pushed. Working tree clean afterward.
+
 ## Current Known Git Status
 
-- `AGENTS.md` has a type change because it is now a symlink to `CLAUDE.md`.
-- `CLAUDE.md` has instruction updates, including v2 planning-schema guidance and the handoff-logging requirement (now pointing at `HANDOFF.md`).
-- `HANDOFF.md` replaces the earlier `CLAUDE_HANDOFF.md`; both Codex and Claude write here, tagging dated sections with their author.
-- Latest Codex update only added the context-refresh note above to `HANDOFF.md`.
-- `eslint.config.mjs`, `prisma/schema.prisma`, `prisma/migrations/`, and the reference/settings API route directories contain Phase 1 work.
-- `src/app/api/exercises/`, `src/lib/exercise-api.ts`, `src/app/exercise-library-app.tsx`, `src/app/page.tsx`, and `src/app/layout.tsx` contain Phase 2 work.
-- `next.config.ts` now sets `allowedDevOrigins` for the LAN IP, Tailscale IP, and `pravlab` hostname (dev-server fix).
-- `workout_app_planning_schema_v2.md` is still untracked and was not modified, but is now referenced as authoritative by `CLAUDE.md`.
+- All Phase 1, Phase 2, dev-server fix, UI cleanup, tooling, and spec changes are now committed and pushed to `origin/main` as commit `4b20cd7`.
+- Working tree is clean apart from any new entries to `HANDOFF.md` made after the push.
+- Branch: `main`, in sync with `origin/main` on GitHub (`CrypticData/nextrep-app`).
