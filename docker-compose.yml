@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nextrep}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nextrep}
+      POSTGRES_DB: ${POSTGRES_DB:-nextrep}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nextrep} -d ${POSTGRES_DB:-nextrep}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Override DATABASE_URL so the app talks to the `db` service inside the
+      # compose network instead of localhost.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-nextrep}:${POSTGRES_PASSWORD:-nextrep}@db:5432/${POSTGRES_DB:-nextrep}?schema=public
+      NODE_ENV: development
+    ports:
+      - "3000:3000"
+    volumes:
+      # Mount source for hot reload, but keep node_modules and .next inside the
+      # container so we don't shadow the platform-specific binaries.
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+
+volumes:
+  postgres-data:
