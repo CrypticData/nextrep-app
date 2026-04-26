@@ -13,7 +13,7 @@ NextRep is a single-user, self-hosted workout tracker. Accessed from a phone bro
 The repo is **pre-scaffold**. There is no `package.json`, `tsconfig.json`, Next.js project, Prisma schema, or Docker config yet. The current files are:
 
 - `nextrep-app_planning_schema.md` — ~2900-line engineering spec (authoritative for everything below)
-- `index.html` — single-file React 18 prototype (CDN React + Babel standalone, hardcoded mock data) — **visual reference only**
+- `nextrep-app.html` — single-file React 18 prototype (CDN React + Babel standalone, hardcoded mock data) — **visual reference only**
 - `ios-frame.jsx` — iOS 26 device frame for previewing the prototype — visual reference only
 - `README.md`, `.gitignore`
 
@@ -59,7 +59,7 @@ Read the relevant section **before** suggesting any change to data model, valida
 
 ## Prototype is reference, not source
 
-`index.html` and `ios-frame.jsx` are visual/interaction references for layout, dark theme, set row UI, bottom nav placement, and the live workout screen. Do not lift code directly. Specifically ignore:
+`nextrep-app.html` and `ios-frame.jsx` are visual/interaction references for layout, dark theme, set row UI, bottom nav placement, and the live workout screen. Do not lift code directly. Specifically ignore:
 
 - Hardcoded arrays: `chartData`, `exercises`, `workoutLog`, `routines`, `catColors`, `EX_HISTORY`, `FOLDERS` — **not seed data**. Users create their own exercises in MVP; routines and folders are post-MVP.
 - Tweak panel and `window.postMessage` edit-mode integration — prototype scaffolding only.
