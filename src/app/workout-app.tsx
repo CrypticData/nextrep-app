@@ -480,7 +480,7 @@ function LiveWorkout({
     setSetEditError(null);
 
     try {
-      const updatedSet = await fetchJson<WorkoutSet>(`/api/sets/${setId}`, {
+      const updatedSets = await fetchJson<WorkoutSet[]>(`/api/sets/${setId}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -501,9 +501,7 @@ function LiveWorkout({
               patch.weight_input_unit
                 ? patch.weight_input_unit
                 : workoutExercise.input_weight_unit,
-            sets: workoutExercise.sets.map((set) =>
-              set.id === setId ? updatedSet : set,
-            ),
+            sets: sortWorkoutSets(updatedSets),
           };
         }),
       );

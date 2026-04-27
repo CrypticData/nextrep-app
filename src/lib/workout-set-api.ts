@@ -235,12 +235,13 @@ export async function updateActiveWorkoutSet(
         });
     }
 
-    const updatedSet = await tx.workoutSet.findUniqueOrThrow({
-      where: { id: existingSet.id },
+    const sets = await tx.workoutSet.findMany({
+      where: { workoutSessionExerciseId: existingSet.workoutSessionExerciseId },
+      orderBy: { rowIndex: "asc" },
       select: workoutSetSelect,
     });
 
-    return { kind: "ok" as const, set: updatedSet };
+    return { kind: "ok" as const, sets };
   });
 }
 

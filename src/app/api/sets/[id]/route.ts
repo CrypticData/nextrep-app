@@ -70,7 +70,7 @@ export async function PATCH(
     return badRequest("Assisted weight cannot exceed current bodyweight.");
   }
 
-  return NextResponse.json(toWorkoutSetResponse(result.set));
+  return NextResponse.json(result.sets.map(toWorkoutSetResponse));
 }
 
 export async function DELETE(
