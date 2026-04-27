@@ -216,10 +216,13 @@ This file records workspace changes made by Codex and Claude so future sessions 
 - Git operation:
   - Committed the Phase 3.5 / Pre Phase 4A work as `4b92dcf` (`Pre Phase 4A profile and exercise type setup`) on `main`.
   - Pushed `main` to `origin/main` successfully (`22f3150..4b92dcf`).
+  - Committed and pushed the handoff follow-up as `e039088` (`Update handoff after Pre Phase 4A push`) on `main`.
 
 ## Current Known Git Status
 
 - Branch: `main`, tracking `origin/main`.
 - Phase 1, Phase 2, and Phase 3 are all committed and pushed.
 - `phases/phase3.md` is now in git as part of the Phase 3 push.
-- Phase 3.5 / Pre Phase 4A work is committed and pushed through `4b92dcf`; only this handoff follow-up entry remains to commit and push.
+- Phase 3.5 / Pre Phase 4A work is committed and pushed through `4b92dcf`.
+- Handoff follow-up for that push is committed and pushed through `e039088`.
+- This final status correction is the only remaining local change before the final handoff-status push.
