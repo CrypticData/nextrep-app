@@ -213,10 +213,13 @@ This file records workspace changes made by Codex and Claude so future sessions 
   - `npm run build` passed after each follow-up.
   - API checks confirmed existing exercises report `exercise_type: "weight_reps"`, changing an existing exercise type returns `400`, and workout session responses include `server_now`.
 - Including `phases/phase3.5.md` and `phases/prephase4.md` in git with this push so future agents can see the planning inputs.
+- Git operation:
+  - Committed the Phase 3.5 / Pre Phase 4A work as `4b92dcf` (`Pre Phase 4A profile and exercise type setup`) on `main`.
+  - Pushed `main` to `origin/main` successfully (`22f3150..4b92dcf`).
 
 ## Current Known Git Status
 
 - Branch: `main`, tracking `origin/main`.
 - Phase 1, Phase 2, and Phase 3 are all committed and pushed.
 - `phases/phase3.md` is now in git as part of the Phase 3 push.
-- Working tree is being committed and pushed with Phase 3.5 / Pre Phase 4A changes.
+- Phase 3.5 / Pre Phase 4A work is committed and pushed through `4b92dcf`; only this handoff follow-up entry remains to commit and push.
