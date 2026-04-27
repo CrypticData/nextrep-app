@@ -38,6 +38,11 @@ export const workoutSessionExerciseSelect = {
   notes: true,
   createdAt: true,
   updatedAt: true,
+  exercise: {
+    select: {
+      exerciseType: true,
+    },
+  },
   sets: {
     orderBy: { rowIndex: "asc" },
     select: workoutSetSelect,
@@ -73,6 +78,7 @@ export type WorkoutSessionExerciseResponse = {
   id: string;
   workout_session_id: string;
   exercise_id: string | null;
+  exercise_type: ExerciseType | null;
   order_index: number;
   input_weight_unit: WeightUnit | null;
   exercise_name_snapshot: string;
@@ -111,6 +117,7 @@ export function toWorkoutSessionExerciseResponse(
     id: workoutExercise.id,
     workout_session_id: workoutExercise.workoutSessionId,
     exercise_id: workoutExercise.exerciseId,
+    exercise_type: workoutExercise.exercise?.exerciseType ?? null,
     order_index: workoutExercise.orderIndex,
     input_weight_unit: workoutExercise.inputWeightUnit,
     exercise_name_snapshot: workoutExercise.exerciseNameSnapshot,
@@ -278,7 +285,9 @@ function resolveWorkoutExerciseInputUnit(
     : null;
 }
 
-function toWorkoutSetResponse(set: SelectedWorkoutSessionExercise["sets"][number]) {
+export function toWorkoutSetResponse(
+  set: SelectedWorkoutSessionExercise["sets"][number],
+) {
   return {
     id: set.id,
     row_index: set.rowIndex,
