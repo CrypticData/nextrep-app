@@ -94,6 +94,18 @@ model ExerciseSecondaryMuscleGroup {
   @@map("exercise_secondary_muscle_groups")
 }
 
+model BodyweightRecord {
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  value      Decimal    @db.Decimal(8, 2)
+  unit       WeightUnit @default(lbs)
+  measuredAt DateTime   @map("measured_at") @db.Timestamptz(6)
+  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([measuredAt])
+  @@map("bodyweight_records")
+}
+
 model WorkoutSession {
   id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name        String?

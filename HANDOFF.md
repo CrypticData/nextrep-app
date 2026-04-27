@@ -218,6 +218,37 @@ This file records workspace changes made by Codex and Claude so future sessions 
   - Pushed `main` to `origin/main` successfully (`22f3150..4b92dcf`).
   - Committed and pushed the handoff follow-up as `e039088` (`Update handoff after Pre Phase 4A push`) on `main`.
 
+## 2026-04-27 (Codex)
+
+- Made a small Exercise Detail spacing adjustment in `src/app/exercise-library-app.tsx`:
+  - Added top padding to the detail wrapper so the local back/name/edit row is not tight against the `Exercises` subpage header.
+  - Kept the Exercise Library list spacing unchanged.
+- Validation:
+  - Read the local Next.js App Router Server/Client Components doc before editing.
+  - `npm run lint` passed.
+- Continued Pre Phase 4 with bodyweight records and the Measures screen:
+  - Added Prisma `BodyweightRecord` mapped to `bodyweight_records`.
+  - Added migration `20260427120000_add_bodyweight_records` with `DECIMAL(8, 2)`, `WeightUnit`, `measured_at`, timestamps, measured-at index, and raw `bodyweight_records_value_positive` check constraint.
+  - Added shared bodyweight API parsing/response helpers in `src/lib/bodyweight-api.ts`.
+  - Added `GET`/`POST /api/bodyweight-records`, `GET /api/bodyweight-records/latest`, and `GET`/`PATCH`/`DELETE /api/bodyweight-records/[id]`.
+  - Replaced the `/profile/measures` placeholder with a real mobile UI for latest bodyweight, history, add, edit, and confirmed delete.
+  - Follow-up UX adjustment: Measures now has only the green header `+` create button on the screen; removed the secondary "Add Bodyweight" and "Add First Record" buttons.
+  - Follow-up date-only adjustment: Measures display and entry now use dates only; the UI no longer shows or asks for timestamps.
+  - Restarted the app container after Prisma generation so the running dev server loaded the new Prisma delegate/routes.
+- Validation:
+  - Read the local Next.js Route Handlers doc before adding API routes.
+  - `npx prisma validate` passed.
+  - `npx prisma migrate dev` applied `20260427120000_add_bodyweight_records`.
+  - `npx prisma generate` completed.
+  - `npx prisma migrate status` reports 4 migrations and DB schema up to date.
+  - `npm run lint` passed.
+  - `npm run build` passed.
+  - `/api/health` returned `{"ok":true,"db":"reachable"}` after app restart.
+  - Bodyweight API checks passed: list empty, create two records, latest returns newest by `measured_at`, patch updates value/unit/date, invalid value returns `400`, invalid UUID returns `400`, delete returns `204`, and cleanup returned list `[]` plus latest `null`.
+  - Follow-up API smoke check for date-only UI passed: created a temporary `140.00 lbs` record dated `2026-04-27`, then deleted it with `204`.
+- Caveat:
+  - Remaining Pre Phase 4 workout-set items still depend on Phase 4 workout exercise/set tables and live set rows: bodyweight snapshot on `workout_sets`, exercise-type-aware set row inputs, volume formulas, missing-bodyweight workout warnings, and assisted-weight validation during set save/finish.
+
 ## Current Known Git Status
 
 - Branch: `main`, tracking `origin/main`.
@@ -226,4 +257,4 @@ This file records workspace changes made by Codex and Claude so future sessions 
 - Phase 3.5 / Pre Phase 4A work is committed and pushed through `4b92dcf`.
 - Handoff follow-up for that push is committed and pushed through `e039088`.
 - Final handoff status correction has been pushed after `e039088`.
-- Working tree is clean and `main` is in sync with `origin/main`.
+- Working tree has uncommitted Codex edits for the Exercise Detail spacing tweak and bodyweight Measures work; commit/push requested next in this turn.

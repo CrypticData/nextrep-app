@@ -581,7 +581,7 @@ function ExerciseDetail({
       : "None";
 
   return (
-    <div>
+    <div className="pt-4">
       <div className="mb-5 flex items-center gap-2">
         <button
           type="button"
