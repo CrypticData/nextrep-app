@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isUuid } from "@/lib/exercise-api";
 import {
   addExerciseToActiveWorkoutSession,
+  listActiveWorkoutSessionExercises,
   parseAddWorkoutExerciseBody,
   toWorkoutSessionExerciseResponse,
 } from "@/lib/workout-exercise-api";
@@ -69,5 +70,26 @@ export async function POST(
   return NextResponse.json(
     toWorkoutSessionExerciseResponse(result.workoutExercise),
     { status: 201 },
+  );
+}
+
+export async function GET(
+  _request: Request,
+  context: WorkoutSessionExercisesRouteContext,
+) {
+  const workoutSessionId = await getWorkoutSessionId(context);
+
+  if (!isUuid(workoutSessionId)) {
+    return badRequest("Workout session id must be a valid UUID.");
+  }
+
+  const result = await listActiveWorkoutSessionExercises(workoutSessionId);
+
+  if (result.kind === "workout_not_found") {
+    return notFound("Active workout session not found.");
+  }
+
+  return NextResponse.json(
+    result.workoutExercises.map(toWorkoutSessionExerciseResponse),
   );
 }

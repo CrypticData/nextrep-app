@@ -124,6 +124,27 @@ export function toWorkoutSessionExerciseResponse(
   };
 }
 
+export async function listActiveWorkoutSessionExercises(
+  workoutSessionId: string,
+) {
+  const session = await prisma.workoutSession.findUnique({
+    where: { id: workoutSessionId },
+    select: { id: true, status: true },
+  });
+
+  if (!session || session.status !== "active") {
+    return { kind: "workout_not_found" as const };
+  }
+
+  const workoutExercises = await prisma.workoutSessionExercise.findMany({
+    where: { workoutSessionId },
+    orderBy: { orderIndex: "asc" },
+    select: workoutSessionExerciseSelect,
+  });
+
+  return { kind: "ok" as const, workoutExercises };
+}
+
 export async function addExerciseToActiveWorkoutSession(
   workoutSessionId: string,
   exerciseId: string,
@@ -183,7 +204,7 @@ export async function addExerciseToActiveWorkoutSession(
         primaryMuscleGroupNameSnapshot: exercise.primaryMuscleGroup.name,
         sets: {
           create: {
-            rowIndex: 0,
+            rowIndex: 1,
             setNumber: 1,
             setType: "normal",
           },
