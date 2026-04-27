@@ -177,8 +177,14 @@ export function WorkoutApp() {
     }
   }
 
+  const isLiveScreen = screen === "live";
+
   return (
-    <AppShell title={screen === "live" ? "Active Workout" : "Workout"}>
+    <AppShell
+      hideHeader={isLiveScreen}
+      mainClassName={isLiveScreen ? "px-5 pb-6 pt-0" : undefined}
+      title={isLiveScreen ? "Log Workout" : "Workout"}
+    >
       {isLoading ? <WorkoutLoading /> : null}
 
       {!isLoading && error ? (
@@ -188,6 +194,7 @@ export function WorkoutApp() {
       {!isLoading && !error && screen === "live" && session ? (
         <LiveWorkout
           isDiscarding={isDiscarding}
+          onMinimize={() => setScreen("resume")}
           onDiscard={handleDiscardWorkout}
           session={session}
         />
@@ -327,10 +334,12 @@ function ResumeWorkout({
 function LiveWorkout({
   isDiscarding,
   onDiscard,
+  onMinimize,
   session,
 }: {
   isDiscarding: boolean;
   onDiscard: () => void;
+  onMinimize: () => void;
   session: WorkoutSession;
 }) {
   const elapsedSeconds = useElapsedSeconds(
@@ -354,7 +363,16 @@ function LiveWorkout({
   const [savingSetIds, setSavingSetIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [deletingSetIds, setDeletingSetIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [addingSetExerciseIds, setAddingSetExerciseIds] = useState<
+    Set<string>
+  >(() => new Set());
   const [savingUnitExerciseIds, setSavingUnitExerciseIds] = useState<
+    Set<string>
+  >(() => new Set());
+  const [removingWorkoutExerciseIds, setRemovingWorkoutExerciseIds] = useState<
     Set<string>
   >(() => new Set());
   const [setEditError, setSetEditError] = useState<string | null>(null);
@@ -500,6 +518,69 @@ function LiveWorkout({
     }
   }
 
+  async function handleAddSet(workoutExerciseId: string) {
+    setAddingSetExerciseIds((currentIds) =>
+      new Set(currentIds).add(workoutExerciseId),
+    );
+    setSetEditError(null);
+
+    try {
+      const createdSet = await fetchJson<WorkoutSet>(
+        `/api/workout-session-exercises/${workoutExerciseId}/sets`,
+        { method: "POST" },
+      );
+
+      setWorkoutExercises((currentExercises) =>
+        currentExercises.map((workoutExercise) =>
+          workoutExercise.id === workoutExerciseId
+            ? {
+                ...workoutExercise,
+                sets: sortWorkoutSets([...workoutExercise.sets, createdSet]),
+              }
+            : workoutExercise,
+        ),
+      );
+    } catch (error) {
+      setSetEditError(getErrorMessage(error));
+    } finally {
+      setAddingSetExerciseIds((currentIds) => {
+        const nextIds = new Set(currentIds);
+        nextIds.delete(workoutExerciseId);
+        return nextIds;
+      });
+    }
+  }
+
+  async function handleDeleteSet(workoutExerciseId: string, setId: string) {
+    setDeletingSetIds((currentIds) => new Set(currentIds).add(setId));
+    setSetEditError(null);
+
+    try {
+      const updatedSets = await fetchJson<WorkoutSet[]>(`/api/sets/${setId}`, {
+        method: "DELETE",
+      });
+
+      setWorkoutExercises((currentExercises) =>
+        currentExercises.map((workoutExercise) =>
+          workoutExercise.id === workoutExerciseId
+            ? {
+                ...workoutExercise,
+                sets: sortWorkoutSets(updatedSets),
+              }
+            : workoutExercise,
+        ),
+      );
+    } catch (error) {
+      setSetEditError(getErrorMessage(error));
+    } finally {
+      setDeletingSetIds((currentIds) => {
+        const nextIds = new Set(currentIds);
+        nextIds.delete(setId);
+        return nextIds;
+      });
+    }
+  }
+
   async function handleUpdateWorkoutExerciseUnit(
     workoutExerciseId: string,
     weightUnit: "lbs" | "kg",
@@ -541,6 +622,33 @@ function LiveWorkout({
     }
   }
 
+  async function handleRemoveWorkoutExercise(
+    workoutExercise: WorkoutSessionExercise,
+  ) {
+    setRemovingWorkoutExerciseIds((currentIds) =>
+      new Set(currentIds).add(workoutExercise.id),
+    );
+    setSetEditError(null);
+
+    try {
+      const updatedWorkoutExercises = await fetchJson<
+        WorkoutSessionExercise[]
+      >(`/api/workout-session-exercises/${workoutExercise.id}`, {
+        method: "DELETE",
+      });
+
+      setWorkoutExercises(sortWorkoutExercises(updatedWorkoutExercises));
+    } catch (error) {
+      setSetEditError(getErrorMessage(error));
+    } finally {
+      setRemovingWorkoutExerciseIds((currentIds) => {
+        const nextIds = new Set(currentIds);
+        nextIds.delete(workoutExercise.id);
+        return nextIds;
+      });
+    }
+  }
+
   const workoutSummary = useMemo(
     () => getWorkoutSummary(workoutExercises, session.default_weight_unit),
     [session.default_weight_unit, workoutExercises],
@@ -549,38 +657,15 @@ function LiveWorkout({
   return (
     <>
       <div className="space-y-4">
-        <section className="rounded-3xl border border-white/10 bg-[#181818] p-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.14em] text-emerald-300">
-                In progress
-              </p>
-              <p className="mt-3 font-mono text-5xl font-semibold tracking-normal text-white">
-                {formatElapsed(elapsedSeconds)}
-              </p>
-              <p className="mt-2 text-sm text-zinc-500">
-                Started {formatStartedTime(session.started_at)}
-              </p>
-            </div>
-            <span className="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-bold text-emerald-300">
-              Active
-            </span>
-          </div>
-          <div className="mt-5 grid grid-cols-3 gap-2">
-            <SummaryTile label="Top sets" value={workoutSummary.checkedSets} />
-            <SummaryTile
-              label="Recorded"
-              value={workoutSummary.recordedSets}
-            />
-            <SummaryTile
-              label="Volume"
-              value={formatVolumeSummary(
-                workoutSummary.volumeValue,
-                workoutSummary.volumeUnit,
-              )}
-            />
-          </div>
-        </section>
+        <LiveWorkoutStickyHeader
+          duration={formatElapsedWords(elapsedSeconds)}
+          onMinimize={onMinimize}
+          sets={workoutSummary.checkedSets}
+          volume={formatVolumeSummary(
+            workoutSummary.volumeValue,
+            workoutSummary.volumeUnit,
+          )}
+        />
 
         {isLoadingWorkoutExercises ? <WorkoutExerciseLoading /> : null}
 
@@ -605,8 +690,18 @@ function LiveWorkout({
             {workoutExercises.map((workoutExercise) => (
               <WorkoutExerciseCard
                 key={workoutExercise.id}
+                isAddingSet={addingSetExerciseIds.has(workoutExercise.id)}
+                isSetDeleting={(setId) => deletingSetIds.has(setId)}
                 isSetSaving={(setId) => savingSetIds.has(setId)}
                 isUnitSaving={savingUnitExerciseIds.has(workoutExercise.id)}
+                isRemoving={removingWorkoutExerciseIds.has(workoutExercise.id)}
+                onAddSet={() => void handleAddSet(workoutExercise.id)}
+                onDeleteSet={(setId) =>
+                  void handleDeleteSet(workoutExercise.id, setId)
+                }
+                onRemoveExercise={() =>
+                  void handleRemoveWorkoutExercise(workoutExercise)
+                }
                 onUpdateExerciseUnit={(weightUnit) =>
                   handleUpdateWorkoutExerciseUnit(
                     workoutExercise.id,
@@ -720,19 +815,76 @@ function SetEditError({ message }: { message: string }) {
   );
 }
 
-function SummaryTile({
+function LiveWorkoutStickyHeader({
+  duration,
+  onMinimize,
+  sets,
+  volume,
+}: {
+  duration: string;
+  onMinimize: () => void;
+  sets: number;
+  volume: string;
+}) {
+  return (
+    <div className="sticky top-0 z-30 -mx-5 -mt-px bg-[#101010]">
+      <div className="grid min-h-[68px] grid-cols-[40px_minmax(0,1fr)_40px_auto] items-center gap-2 border-b border-white/10 bg-[#181818] px-5 py-3">
+        <button
+          type="button"
+          onClick={onMinimize}
+          className="-ml-2 flex h-10 w-10 items-center justify-center rounded-full text-zinc-100 transition active:scale-95 active:bg-white/[0.06]"
+          aria-label="Minimize live workout"
+        >
+          <ChevronDownIcon className="h-7 w-7" />
+        </button>
+        <h1 className="min-w-0 truncate text-xl font-semibold tracking-normal text-white">
+          Log Workout
+        </h1>
+        <button
+          type="button"
+          className="flex h-10 w-10 items-center justify-center rounded-full text-zinc-100 transition active:scale-95 active:bg-white/[0.06]"
+          aria-label="Rest timer"
+        >
+          <TimerIcon className="h-6 w-6" />
+        </button>
+        <button
+          type="button"
+          className="h-10 rounded-xl bg-emerald-500 px-4 text-sm font-bold text-white shadow-lg shadow-emerald-950/40 transition active:scale-[0.99]"
+        >
+          Finish
+        </button>
+      </div>
+
+      <div className="grid min-h-[68px] grid-cols-[minmax(118px,1.35fr)_minmax(74px,0.85fr)_minmax(38px,0.45fr)] gap-2 border-b border-white/10 bg-[#101010] px-5 py-3">
+        <LiveWorkoutStat label="Duration" value={duration} accent />
+        <LiveWorkoutStat label="Volume" value={volume} />
+        <LiveWorkoutStat label="Sets" value={sets.toString()} />
+      </div>
+    </div>
+  );
+}
+
+function LiveWorkoutStat({
+  accent = false,
   label,
   value,
 }: {
+  accent?: boolean;
   label: string;
-  value: number | string;
+  value: string;
 }) {
   return (
-    <div className="rounded-2xl bg-white/[0.04] px-3 py-2">
-      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-zinc-500">
+    <div className="min-w-0">
+      <p className="text-sm font-medium tracking-normal text-zinc-500">
         {label}
       </p>
-      <p className="mt-1 truncate text-sm font-bold text-white">{value}</p>
+      <p
+        className={`mt-2 whitespace-nowrap text-[1.35rem] font-semibold leading-none tracking-normal ${
+          accent ? "text-emerald-300" : "text-white"
+        }`}
+      >
+        {value}
+      </p>
     </div>
   );
 }
@@ -765,15 +917,27 @@ function EmptyWorkoutExerciseState({
 }
 
 function WorkoutExerciseCard({
+  isAddingSet,
+  isSetDeleting,
   isSetSaving,
+  isRemoving,
   isUnitSaving,
+  onAddSet,
+  onDeleteSet,
+  onRemoveExercise,
   onUpdateExerciseUnit,
   onUpdateSet,
   sessionDefaultWeightUnit,
   workoutExercise,
 }: {
+  isAddingSet: boolean;
+  isSetDeleting: (setId: string) => boolean;
   isSetSaving: (setId: string) => boolean;
+  isRemoving: boolean;
   isUnitSaving: boolean;
+  onAddSet: () => void;
+  onDeleteSet: (setId: string) => void;
+  onRemoveExercise: () => void;
   onUpdateExerciseUnit: (weightUnit: "lbs" | "kg") => Promise<void>;
   onUpdateSet: (setId: string, patch: WorkoutSetPatch) => Promise<void>;
   sessionDefaultWeightUnit: "lbs" | "kg";
@@ -784,6 +948,7 @@ function WorkoutExerciseCard({
     (set) => set.checked,
   ).length;
   const [isUnitSheetOpen, setIsUnitSheetOpen] = useState(false);
+  const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
   const activeWeightUnit =
     workoutExercise.input_weight_unit ?? sessionDefaultWeightUnit;
   const canChangeExerciseUnit = exerciseType === "weight_reps";
@@ -811,9 +976,22 @@ function WorkoutExerciseCard({
           </p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
-          <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-xs font-bold text-zinc-300">
-            #{workoutExercise.order_index + 1}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-xs font-bold text-zinc-300">
+              #{workoutExercise.order_index + 1}
+            </span>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsActionSheetOpen(true)}
+                disabled={isRemoving}
+                className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200 active:scale-95 disabled:cursor-wait disabled:opacity-50"
+                aria-label="Workout exercise actions"
+              >
+                <MoreIcon className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
           <span className="text-xs font-semibold text-zinc-500">
             {checkedSetCount}/{workoutExercise.sets.length} done
           </span>
@@ -847,8 +1025,10 @@ function WorkoutExerciseCard({
             <WorkoutSetEditorRow
               exerciseType={exerciseType}
               inputWeightUnit={workoutExercise.input_weight_unit}
+              isDeleting={isSetDeleting(set.id)}
               isSaving={isSetSaving(set.id)}
               key={`${set.id}:${workoutExercise.input_weight_unit ?? "default"}`}
+              onDelete={() => onDeleteSet(set.id)}
               onUpdate={(patch) => onUpdateSet(set.id, patch)}
               sessionDefaultWeightUnit={sessionDefaultWeightUnit}
               set={set}
@@ -862,11 +1042,12 @@ function WorkoutExerciseCard({
       <div className="px-5 pt-4">
         <button
           type="button"
-          disabled
-          className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white/[0.07] px-4 text-base font-bold text-zinc-300 opacity-70"
+          onClick={onAddSet}
+          disabled={isAddingSet || isRemoving}
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white/[0.07] px-4 text-base font-bold text-zinc-300 transition active:scale-[0.99] disabled:cursor-wait disabled:opacity-60"
         >
           <PlusIcon className="h-5 w-5" />
-          Add Set
+          {isAddingSet ? "Adding Set" : "Add Set"}
         </button>
       </div>
 
@@ -881,21 +1062,72 @@ function WorkoutExerciseCard({
           subtitle={workoutExercise.exercise_name_snapshot}
         />
       ) : null}
+
+      {isActionSheetOpen ? (
+        <WorkoutExerciseActionsSheet
+          isRemoving={isRemoving}
+          onClose={() => setIsActionSheetOpen(false)}
+          onRemove={() => {
+            setIsActionSheetOpen(false);
+            onRemoveExercise();
+          }}
+          title={workoutExercise.exercise_name_snapshot}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function WorkoutExerciseActionsSheet({
+  isRemoving,
+  onClose,
+  onRemove,
+  title,
+}: {
+  isRemoving: boolean;
+  onClose: () => void;
+  onRemove: () => void;
+  title: string;
+}) {
+  return (
+    <BottomSheet onClose={onClose}>
+      <SheetHeader onClose={onClose} subtitle={title} title="Exercise Actions" />
+      <div className="flex-1 overflow-y-auto px-5 py-5">
+        <WorkoutSheetField label="Actions">
+          <button
+            type="button"
+            onClick={onRemove}
+            disabled={isRemoving}
+            className="grid min-h-14 w-full grid-cols-[44px_1fr] items-center rounded-2xl border border-red-400/20 bg-red-500/10 px-3 text-left transition active:scale-[0.99] disabled:cursor-wait disabled:opacity-60"
+          >
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-400/10">
+              <TrashIcon className="h-5 w-5 text-red-300" />
+            </span>
+            <span className="text-base font-semibold text-red-100">
+              {isRemoving ? "Removing" : "Remove Exercise"}
+            </span>
+          </button>
+        </WorkoutSheetField>
+      </div>
+    </BottomSheet>
   );
 }
 
 function WorkoutSetEditorRow({
   exerciseType,
   inputWeightUnit,
+  isDeleting,
   isSaving,
+  onDelete,
   onUpdate,
   sessionDefaultWeightUnit,
   set,
 }: {
   exerciseType: ExerciseType;
   inputWeightUnit: "lbs" | "kg" | null;
+  isDeleting: boolean;
   isSaving: boolean;
+  onDelete: () => void;
   onUpdate: (patch: WorkoutSetPatch) => Promise<void>;
   sessionDefaultWeightUnit: "lbs" | "kg";
   set: WorkoutSet;
@@ -943,6 +1175,11 @@ function WorkoutSetEditorRow({
   async function handleSetTypeChange(value: WorkoutSet["set_type"]) {
     setIsSetTypeSheetOpen(false);
     await onUpdate({ set_type: value });
+  }
+
+  function handleDeleteSet() {
+    setIsSetTypeSheetOpen(false);
+    onDelete();
   }
 
   const hasMissingBodyweight =
@@ -1037,7 +1274,9 @@ function WorkoutSetEditorRow({
       {isSetTypeSheetOpen ? (
         <SetTypeSheet
           currentSetType={set.set_type}
+          isDeleting={isDeleting}
           onClose={() => setIsSetTypeSheetOpen(false)}
+          onDelete={handleDeleteSet}
           onSelect={(setType) => void handleSetTypeChange(setType)}
         />
       ) : null}
@@ -1061,11 +1300,15 @@ function WorkoutSetEditorRow({
 
 function SetTypeSheet({
   currentSetType,
+  isDeleting,
   onClose,
+  onDelete,
   onSelect,
 }: {
   currentSetType: WorkoutSet["set_type"];
+  isDeleting: boolean;
   onClose: () => void;
+  onDelete: () => void;
   onSelect: (setType: WorkoutSet["set_type"]) => void;
 }) {
   const options: Array<{
@@ -1130,17 +1373,19 @@ function SetTypeSheet({
               ) : null}
             </button>
           ))}
-          <div className="grid min-h-14 grid-cols-[44px_1fr_68px] items-center rounded-2xl border border-white/10 bg-[#232323] px-3 opacity-40">
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={isDeleting}
+            className="grid min-h-14 w-full grid-cols-[44px_1fr] items-center rounded-2xl border border-red-400/20 bg-red-500/10 px-3 text-left transition active:scale-[0.99] disabled:cursor-wait disabled:opacity-60"
+          >
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-400/10">
               <XIcon className="h-5 w-5 text-red-300" />
             </span>
-            <span className="text-base font-semibold text-white">
-              Remove Set
+            <span className="text-base font-semibold text-red-100">
+              {isDeleting ? "Removing Set" : "Remove Set"}
             </span>
-            <span className="rounded-full bg-white/[0.06] px-2 py-1 text-center text-[10px] font-bold uppercase tracking-[0.08em] text-zinc-400">
-              Later
-            </span>
-          </div>
+          </button>
           </div>
         </WorkoutSheetField>
       </div>
@@ -1603,6 +1848,22 @@ function formatElapsed(totalSeconds: number) {
   ].join(":");
 }
 
+function formatElapsedWords(totalSeconds: number) {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}min ${seconds}s`;
+  }
+
+  return `${seconds}s`;
+}
+
 function formatStartedTime(startedAt: string) {
   return new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
@@ -1613,6 +1874,12 @@ function formatStartedTime(startedAt: string) {
 function sortWorkoutExercises(exercises: WorkoutSessionExercise[]) {
   return [...exercises].sort((first, second) => {
     return first.order_index - second.order_index;
+  });
+}
+
+function sortWorkoutSets(sets: WorkoutSet[]) {
+  return [...sets].sort((first, second) => {
+    return first.row_index - second.row_index;
   });
 }
 
@@ -1643,8 +1910,6 @@ function getWorkoutSummary(
 
   return {
     checkedSets: sets.filter((set) => set.checked).length,
-    recordedSets: sets.filter((set) => set.reps !== null && set.reps >= 1)
-      .length,
     volumeValue,
     volumeUnit: defaultWeightUnit,
   };
@@ -1827,6 +2092,73 @@ function CheckIcon({ className }: IconProps) {
     >
       <path
         d="m5 12 4 4L19 6"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+}
+
+function ChevronDownIcon({ className }: IconProps) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path
+        d="m5 8 7 7 7-7"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2.4"
+      />
+    </svg>
+  );
+}
+
+function TimerIcon({ className }: IconProps) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path
+        d="M12 7v5l3 2M7.8 3.6 5.5 5.8M16.2 3.6l2.3 2.2M12 21a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+}
+
+function MoreIcon({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="5" r="2" fill="currentColor" />
+      <circle cx="12" cy="12" r="2" fill="currentColor" />
+      <circle cx="12" cy="19" r="2" fill="currentColor" />
+    </svg>
+  );
+}
+
+function TrashIcon({ className }: IconProps) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path
+        d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3"
         stroke="currentColor"
         strokeLinecap="round"
         strokeLinejoin="round"

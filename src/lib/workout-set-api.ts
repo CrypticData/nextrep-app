@@ -244,6 +244,153 @@ export async function updateActiveWorkoutSet(
   });
 }
 
+export async function addSetToActiveWorkoutExercise(
+  workoutExerciseId: string,
+) {
+  if (!isUuid(workoutExerciseId)) {
+    return { kind: "invalid_id" as const };
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const workoutExercise = await tx.workoutSessionExercise.findUnique({
+      where: { id: workoutExerciseId },
+      select: {
+        id: true,
+        workoutSession: {
+          select: {
+            status: true,
+          },
+        },
+        sets: {
+          orderBy: { rowIndex: "asc" },
+          select: {
+            id: true,
+            rowIndex: true,
+            setType: true,
+          },
+        },
+      },
+    });
+
+    if (!workoutExercise || workoutExercise.workoutSession.status !== "active") {
+      return { kind: "workout_exercise_not_found" as const };
+    }
+
+    const nextRowIndex =
+      workoutExercise.sets.reduce(
+        (maxRowIndex, set) => Math.max(maxRowIndex, set.rowIndex),
+        0,
+      ) + 1;
+    const nextSetNumber =
+      workoutExercise.sets.filter(
+        (set) => set.setType === "normal" || set.setType === "failure",
+      ).length + 1;
+
+    const set = await tx.workoutSet.create({
+      data: {
+        workoutSessionExerciseId: workoutExercise.id,
+        rowIndex: nextRowIndex,
+        setNumber: nextSetNumber,
+        setType: "normal",
+      },
+      select: workoutSetSelect,
+    });
+
+    return { kind: "ok" as const, set };
+  });
+}
+
+export async function deleteActiveWorkoutSet(workoutSetId: string) {
+  if (!isUuid(workoutSetId)) {
+    return { kind: "invalid_id" as const };
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const existingSet = await tx.workoutSet.findUnique({
+      where: { id: workoutSetId },
+      select: {
+        id: true,
+        workoutSessionExerciseId: true,
+        workoutSessionExercise: {
+          select: {
+            workoutSession: {
+              select: {
+                status: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (
+      !existingSet ||
+      existingSet.workoutSessionExercise.workoutSession.status !== "active"
+    ) {
+      return { kind: "set_not_found" as const };
+    }
+
+    const remainingSets = await tx.workoutSet.findMany({
+      where: {
+        workoutSessionExerciseId: existingSet.workoutSessionExerciseId,
+        NOT: { id: existingSet.id },
+      },
+      orderBy: { rowIndex: "asc" },
+      select: {
+        id: true,
+        rowIndex: true,
+        setType: true,
+      },
+    });
+    const numbering = recalculateSetNumbering(remainingSets);
+
+    if (!numbering.ok) {
+      return { kind: "invalid_drop_set" as const };
+    }
+
+    await tx.workoutSet.delete({
+      where: { id: existingSet.id },
+      select: { id: true },
+    });
+
+    const rowIndexOffset =
+      remainingSets.reduce(
+        (maxRowIndex, set) => Math.max(maxRowIndex, set.rowIndex),
+        0,
+      ) + 1;
+
+    for (const set of remainingSets) {
+      await tx.workoutSet.update({
+        where: { id: set.id },
+        data: { rowIndex: set.rowIndex + rowIndexOffset },
+        select: { id: true },
+      });
+    }
+
+    for (const [index, set] of remainingSets.entries()) {
+      const setNumbering = numbering.data[index];
+
+      await tx.workoutSet.update({
+        where: { id: set.id },
+        data: {
+          rowIndex: index + 1,
+          setNumber: setNumbering.setNumber,
+          parentSetId: setNumbering.parentSetId,
+        },
+        select: { id: true },
+      });
+    }
+
+    const sets = await tx.workoutSet.findMany({
+      where: { workoutSessionExerciseId: existingSet.workoutSessionExerciseId },
+      orderBy: { rowIndex: "asc" },
+      select: workoutSetSelect,
+    });
+
+    return { kind: "ok" as const, sets };
+  });
+}
+
 export { toWorkoutSetResponse };
 
 type ExistingSet = {

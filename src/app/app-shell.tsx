@@ -9,6 +9,7 @@ type AppShellProps = {
   backHref?: string;
   backLabel?: string;
   children: ReactNode;
+  hideHeader?: boolean;
   mainClassName?: string;
   subpage?: boolean;
   title: string;
@@ -24,6 +25,7 @@ export function AppShell({
   backHref,
   backLabel = "Back",
   children,
+  hideHeader = false,
   mainClassName = "px-5 pb-6 pt-4",
   subpage = false,
   title,
@@ -31,45 +33,47 @@ export function AppShell({
   return (
     <div className="h-dvh overflow-hidden bg-[#050505] text-zinc-50">
       <div className="mx-auto flex h-dvh w-full max-w-md flex-col overflow-hidden bg-[#101010] shadow-2xl shadow-black/40">
-        <header className="shrink-0 border-b border-white/10 px-5 pb-4 pt-6">
-          {subpage ? (
-            <div className="grid grid-cols-[44px_1fr_44px] items-center gap-3">
-              {backHref ? (
-                <Link
-                  href={backHref}
-                  className="flex h-11 w-11 items-center justify-center rounded-full text-zinc-300 transition hover:bg-white/[0.06] hover:text-white active:scale-95"
-                  aria-label={backLabel}
-                >
-                  <BackIcon className="h-5 w-5" />
-                </Link>
-              ) : (
-                <div className="h-11 w-11" />
-              )}
-              <h1 className="min-w-0 truncate text-center text-xl font-semibold tracking-normal text-white">
-                {title}
-              </h1>
-              {action ? (
-                <div className="flex h-11 w-11 items-center justify-center">
-                  {action}
-                </div>
-              ) : (
-                <div className="h-11 w-11" />
-              )}
-            </div>
-          ) : (
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300/70">
-                  NextRep
-                </p>
-                <h1 className="mt-1 text-2xl font-semibold tracking-normal text-white">
+        {hideHeader ? null : (
+          <header className="shrink-0 border-b border-white/10 px-5 pb-4 pt-6">
+            {subpage ? (
+              <div className="grid grid-cols-[44px_1fr_44px] items-center gap-3">
+                {backHref ? (
+                  <Link
+                    href={backHref}
+                    className="flex h-11 w-11 items-center justify-center rounded-full text-zinc-300 transition hover:bg-white/[0.06] hover:text-white active:scale-95"
+                    aria-label={backLabel}
+                  >
+                    <BackIcon className="h-5 w-5" />
+                  </Link>
+                ) : (
+                  <div className="h-11 w-11" />
+                )}
+                <h1 className="min-w-0 truncate text-center text-xl font-semibold tracking-normal text-white">
                   {title}
                 </h1>
+                {action ? (
+                  <div className="flex h-11 w-11 items-center justify-center">
+                    {action}
+                  </div>
+                ) : (
+                  <div className="h-11 w-11" />
+                )}
               </div>
-              {action ? <div className="shrink-0">{action}</div> : null}
-            </div>
-          )}
-        </header>
+            ) : (
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300/70">
+                    NextRep
+                  </p>
+                  <h1 className="mt-1 text-2xl font-semibold tracking-normal text-white">
+                    {title}
+                  </h1>
+                </div>
+                {action ? <div className="shrink-0">{action}</div> : null}
+              </div>
+            )}
+          </header>
+        )}
 
         <main className={`min-h-0 flex-1 overflow-y-auto ${mainClassName}`}>
           {children}

@@ -275,6 +275,75 @@ export async function updateWorkoutExerciseWeightUnit(
   });
 }
 
+export async function removeExerciseFromActiveWorkout(
+  workoutExerciseId: string,
+) {
+  return prisma.$transaction(async (tx) => {
+    const workoutExercise = await tx.workoutSessionExercise.findUnique({
+      where: { id: workoutExerciseId },
+      select: {
+        id: true,
+        workoutSessionId: true,
+        orderIndex: true,
+        workoutSession: {
+          select: {
+            status: true,
+          },
+        },
+      },
+    });
+
+    if (!workoutExercise || workoutExercise.workoutSession.status !== "active") {
+      return { kind: "workout_exercise_not_found" as const };
+    }
+
+    await tx.workoutSessionExercise.delete({
+      where: { id: workoutExerciseId },
+      select: { id: true },
+    });
+
+    const exercisesToReindex = await tx.workoutSessionExercise.findMany({
+      where: {
+        workoutSessionId: workoutExercise.workoutSessionId,
+        orderIndex: { gt: workoutExercise.orderIndex },
+      },
+      orderBy: { orderIndex: "asc" },
+      select: { id: true, orderIndex: true },
+    });
+
+    const orderOffset =
+      exercisesToReindex.reduce(
+        (maxOrderIndex, exercise) =>
+          Math.max(maxOrderIndex, exercise.orderIndex),
+        workoutExercise.orderIndex,
+      ) + 1;
+
+    for (const exercise of exercisesToReindex) {
+      await tx.workoutSessionExercise.update({
+        where: { id: exercise.id },
+        data: { orderIndex: exercise.orderIndex + orderOffset },
+        select: { id: true },
+      });
+    }
+
+    for (const exercise of exercisesToReindex) {
+      await tx.workoutSessionExercise.update({
+        where: { id: exercise.id },
+        data: { orderIndex: exercise.orderIndex - 1 },
+        select: { id: true },
+      });
+    }
+
+    const workoutExercises = await tx.workoutSessionExercise.findMany({
+      where: { workoutSessionId: workoutExercise.workoutSessionId },
+      orderBy: { orderIndex: "asc" },
+      select: workoutSessionExerciseSelect,
+    });
+
+    return { kind: "ok" as const, workoutExercises };
+  });
+}
+
 function resolveWorkoutExerciseInputUnit(
   exerciseType: ExerciseType,
   preferenceWeightUnit: WeightUnit | undefined,

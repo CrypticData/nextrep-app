@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  deleteActiveWorkoutSet,
   parseWorkoutSetPatchBody,
   toWorkoutSetResponse,
   updateActiveWorkoutSet,
@@ -70,4 +71,28 @@ export async function PATCH(
   }
 
   return NextResponse.json(toWorkoutSetResponse(result.set));
+}
+
+export async function DELETE(
+  _request: Request,
+  context: WorkoutSetRouteContext,
+) {
+  const workoutSetId = await getWorkoutSetId(context);
+  const result = await deleteActiveWorkoutSet(workoutSetId);
+
+  if (result.kind === "invalid_id") {
+    return badRequest("Workout set id must be a valid UUID.");
+  }
+
+  if (result.kind === "set_not_found") {
+    return notFound();
+  }
+
+  if (result.kind === "invalid_drop_set") {
+    return badRequest(
+      "Drop sets must come after a normal or failure set in the same exercise.",
+    );
+  }
+
+  return NextResponse.json(result.sets.map(toWorkoutSetResponse));
 }
