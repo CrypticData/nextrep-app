@@ -250,7 +250,8 @@ This file records workspace changes made by Codex and Claude so future sessions 
   - Remaining Pre Phase 4 workout-set items still depend on Phase 4 workout exercise/set tables and live set rows: bodyweight snapshot on `workout_sets`, exercise-type-aware set row inputs, volume formulas, missing-bodyweight workout warnings, and assisted-weight validation during set save/finish.
 - Git operation:
   - Committed the Exercise Detail spacing tweak plus bodyweight records/Measures UI as `b56a855` (`Add bodyweight records and measures UI`) on `main`.
-  - Preparing a handoff follow-up commit, then both commits will be pushed to `origin/main`.
+  - Committed the handoff follow-up as `27499d5` (`Update handoff after bodyweight measures commit`) on `main`.
+  - Pushed `main` to `origin/main` successfully (`c822e38..27499d5`).
 
 ## Current Known Git Status
 
@@ -260,4 +261,5 @@ This file records workspace changes made by Codex and Claude so future sessions 
 - Phase 3.5 / Pre Phase 4A work is committed and pushed through `4b92dcf`.
 - Handoff follow-up for that push is committed and pushed through `e039088`.
 - Final handoff status correction has been pushed after `e039088`.
-- Bodyweight records/Measures work is committed locally as `b56a855`; handoff follow-up commit and push are pending.
+- Bodyweight records/Measures work is committed and pushed through `27499d5`.
+- Working tree is clean and `main` is in sync with `origin/main` after the final handoff status correction is pushed.
