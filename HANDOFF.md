@@ -253,11 +253,40 @@ This file records workspace changes made by Codex and Claude so future sessions 
   - Committed the handoff follow-up as `27499d5` (`Update handoff after bodyweight measures commit`) on `main`.
   - Pushed `main` to `origin/main` successfully (`c822e38..27499d5`).
 
+## 2026-04-27 (Codex)
+
+- Implemented `phases/prephase4part2.md` weight-unit work:
+  - Added shared server-side weight conversion helper in `src/lib/weight-units.ts`.
+  - Hardened `GET`/`PATCH /api/settings` to expose `weight_unit` while preserving `default_weight_unit`; `PATCH` accepts the existing `lbs`/`kg` enum values and maps `lb` to `lbs` for compatibility with the handoff wording.
+  - Updated Bodyweight APIs so records keep their stored `weight`/`weight_unit`, default omitted `unit` to current app settings on create/update, and return converted `display_weight`/`display_weight_unit` using the current global unit.
+  - Updated Measures UI to remove its local kg/lbs toggle and render backend display values.
+  - Added `ExerciseWeightUnitPreference` with unique `exercise_id`, cascade delete, response mapping on exercises, and `GET`/`PATCH /api/exercises/[id]/weight-unit-preference`; non-`weight_reps` exercises are rejected with `400`.
+  - Added `WorkoutSession.defaultWeightUnit` and snapshot current app settings when starting a new workout; workout session responses now include `default_weight_unit`.
+  - Added Phase-4-ready `WorkoutSessionExercise` and `WorkoutSet` models with `input_weight_unit`, exercise snapshots, first-set support, input/normalized/bodyweight/volume unit fields, and raw SQL pair/range constraints.
+  - Added `POST /api/workout-sessions/[id]/exercises` to add an exercise to an active workout, resolve `input_weight_unit` from exercise preference or global settings for `weight_reps`, snapshot exercise labels, and auto-create the first blank set.
+  - Added `PATCH /api/workout-session-exercises/[id]/weight-unit` to update active workout exercise input unit and upsert the exercise preference together.
+  - Added the missing Settings UI: Profile gear now opens `/profile/settings`; Settings has a Units row; `/profile/settings/units` lets the user switch the global weight unit between `lbs` and `kg` through `PATCH /api/settings`.
+- Validation:
+  - Read local Next 16 Route Handlers and Server/Client Components docs before API/UI edits.
+  - `npx prisma format` passed.
+  - `npx prisma validate` passed.
+  - `npx prisma migrate dev` applied `20260427150000_prephase4_weight_units`.
+  - `npx prisma generate` completed.
+  - `npx prisma migrate status` reports 5 migrations and DB schema up to date.
+  - `npm run lint` passed after the Settings UI follow-up.
+  - `npm run build` passed after the Settings UI follow-up and shows `/profile/settings` plus `/profile/settings/units`.
+  - Restarted the app container after Prisma generation; `/api/health` returned `{"ok":true,"db":"reachable"}`.
+  - API smoke script passed for settings aliases, bodyweight stored/display unit conversion, exercise preference create/reject behavior, workout default unit snapshot, workout exercise input-unit resolution, workout exercise unit update, and cleanup/restoring original settings.
+  - Follow-up smoke check confirmed Settings and Units routes return `200`, and toggling `weight_unit` via API works and restored the original `lbs` setting.
+- Caveats:
+  - The database/API foundations for workout exercises and sets are now present, but the live workout UI still does not render exercise cards or editable set rows yet.
+  - Existing canonical DB enum remains `lbs`/`kg` per the v2 schema; `prephase4part2.md` sometimes says `lb`, which is accepted at API input but normalized to `lbs`.
+
 ## Current Known Git Status
 
 - Branch: `main`, tracking `origin/main`.
-- Phase 1, Phase 2, and Phase 3 are all committed and pushed.
-- `phases/phase3.md` is now in git as part of the Phase 3 push.
+- Phase 1, Phase 2, Phase 3, Phase 3.5 / Pre Phase 4A, and bodyweight Measures work are committed and pushed.
+- Current working tree has uncommitted Pre Phase 4 Part 2 changes plus untracked `phases/prephase4part2.md`, the new migration, and new unit/workout API helper/route files.
 - Phase 3.5 / Pre Phase 4A work is committed and pushed through `4b92dcf`.
 - Handoff follow-up for that push is committed and pushed through `e039088`.
 - Final handoff status correction has been pushed after `e039088`.

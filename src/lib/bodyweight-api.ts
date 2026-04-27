@@ -2,6 +2,7 @@ import { Prisma } from "@/generated/prisma/client";
 import type { WeightUnit } from "@/generated/prisma/enums";
 import type { BodyweightRecordGetPayload } from "@/generated/prisma/models/BodyweightRecord";
 import { isUuid } from "@/lib/exercise-api";
+import { formatWeightForDisplay, readWeightUnit } from "@/lib/weight-units";
 
 export const bodyweightRecordSelect = {
   id: true,
@@ -18,6 +19,11 @@ type SelectedBodyweightRecord = BodyweightRecordGetPayload<{
 
 export type BodyweightRecordResponse = {
   id: string;
+  weight: string;
+  weight_unit: WeightUnit;
+  display_weight: string;
+  display_weight_unit: WeightUnit;
+  measured_on: string;
   value: string;
   unit: WeightUnit;
   measured_at: string;
@@ -37,6 +43,7 @@ type ParseResult =
 
 export function parseBodyweightRecordMutationBody(
   value: unknown,
+  defaultWeightUnit: WeightUnit,
 ): ParseResult {
   if (!isRecord(value)) {
     return { ok: false, message: "Request body must be a JSON object." };
@@ -47,7 +54,7 @@ export function parseBodyweightRecordMutationBody(
     return bodyweight;
   }
 
-  const unit = readWeightUnit(value.unit);
+  const unit = readBodyweightUnit(value.unit, defaultWeightUnit);
   if (!unit.ok) {
     return unit;
   }
@@ -69,12 +76,26 @@ export function parseBodyweightRecordMutationBody(
 
 export function toBodyweightRecordResponse(
   record: SelectedBodyweightRecord,
+  displayWeightUnit: WeightUnit,
 ): BodyweightRecordResponse {
+  const storedWeight = record.value.toFixed(2);
+  const displayWeight = formatWeightForDisplay(
+    record.value,
+    record.unit,
+    displayWeightUnit,
+  );
+  const measuredAt = record.measuredAt.toISOString();
+
   return {
     id: record.id,
-    value: record.value.toFixed(2),
+    weight: storedWeight,
+    weight_unit: record.unit,
+    display_weight: displayWeight,
+    display_weight_unit: displayWeightUnit,
+    measured_on: measuredAt.slice(0, 10),
+    value: storedWeight,
     unit: record.unit,
-    measured_at: record.measuredAt.toISOString(),
+    measured_at: measuredAt,
     created_at: record.createdAt.toISOString(),
     updated_at: record.updatedAt.toISOString(),
   };
@@ -118,11 +139,18 @@ function readBodyweightValue(
   return { ok: true, data: rawValue };
 }
 
-function readWeightUnit(
+function readBodyweightUnit(
   value: unknown,
+  defaultWeightUnit: WeightUnit,
 ): { ok: true; data: WeightUnit } | { ok: false; message: string } {
-  if (value === "lbs" || value === "kg") {
-    return { ok: true, data: value };
+  if (value === undefined || value === null) {
+    return { ok: true, data: defaultWeightUnit };
+  }
+
+  const unit = readWeightUnit(value);
+
+  if (unit) {
+    return { ok: true, data: unit };
   }
 
   return { ok: false, message: 'unit must be "lbs" or "kg".' };

@@ -7,6 +7,11 @@ type WeightUnit = "lbs" | "kg";
 
 type BodyweightRecord = {
   id: string;
+  weight: string;
+  weight_unit: WeightUnit;
+  display_weight: string;
+  display_weight_unit: WeightUnit;
+  measured_on: string;
   value: string;
   unit: WeightUnit;
   measured_at: string;
@@ -16,8 +21,12 @@ type BodyweightRecord = {
 
 type BodyweightPayload = {
   value: string;
-  unit: WeightUnit;
   measured_at: string;
+};
+
+type Settings = {
+  weight_unit: WeightUnit;
+  default_weight_unit: WeightUnit;
 };
 
 type ModalMode =
@@ -26,6 +35,7 @@ type ModalMode =
 
 export function MeasuresApp() {
   const [records, setRecords] = useState<BodyweightRecord[]>([]);
+  const [settings, setSettings] = useState<Settings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -43,10 +53,12 @@ export function MeasuresApp() {
     setLoadError(null);
 
     try {
-      const bodyweightRecords = await fetchJson<BodyweightRecord[]>(
-        "/api/bodyweight-records",
-      );
+      const [bodyweightRecords, appSettings] = await Promise.all([
+        fetchJson<BodyweightRecord[]>("/api/bodyweight-records"),
+        fetchJson<Settings>("/api/settings"),
+      ]);
       setRecords(bodyweightRecords);
+      setSettings(appSettings);
     } catch (error) {
       setLoadError(getErrorMessage(error));
     } finally {
@@ -156,6 +168,7 @@ export function MeasuresApp() {
           mode={modalMode}
           onClose={() => setModalMode(null)}
           onSave={handleSaveRecord}
+          weightUnit={settings?.weight_unit ?? "lbs"}
         />
       ) : null}
     </AppShell>
@@ -319,14 +332,15 @@ function BodyweightModal({
   mode,
   onClose,
   onSave,
+  weightUnit,
 }: {
   mode: ModalMode;
   onClose: () => void;
   onSave: (payload: BodyweightPayload) => Promise<void>;
+  weightUnit: WeightUnit;
 }) {
   const editingRecord = mode.kind === "edit" ? mode.record : null;
-  const [value, setValue] = useState(editingRecord?.value ?? "");
-  const [unit, setUnit] = useState<WeightUnit>(editingRecord?.unit ?? "lbs");
+  const [value, setValue] = useState(editingRecord?.display_weight ?? "");
   const [measuredAt, setMeasuredAt] = useState(
     toDateInputValue(editingRecord?.measured_at ?? new Date().toISOString()),
   );
@@ -348,7 +362,7 @@ function BodyweightModal({
     }
 
     if (!measuredAt) {
-      setError("Date and time are required.");
+      setError("Date is required.");
       return;
     }
 
@@ -357,7 +371,6 @@ function BodyweightModal({
     try {
       await onSave({
         value: normalizedValue,
-        unit,
         measured_at: dateInputToIsoDate(measuredAt),
       });
     } catch (submitError) {
@@ -418,7 +431,9 @@ function BodyweightModal({
                 placeholder="138.89"
                 className="h-12 min-w-0 rounded-2xl border border-white/10 bg-[#232323] px-4 text-[15px] text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-400/70"
               />
-              <UnitToggle selectedUnit={unit} onSelect={setUnit} />
+              <div className="flex h-12 min-w-16 items-center justify-center rounded-2xl bg-[#232323] px-4 text-sm font-bold text-zinc-300">
+                {editingRecord?.display_weight_unit ?? weightUnit}
+              </div>
             </div>
           </FormField>
 
@@ -432,37 +447,6 @@ function BodyweightModal({
           </FormField>
         </div>
       </form>
-    </div>
-  );
-}
-
-function UnitToggle({
-  onSelect,
-  selectedUnit,
-}: {
-  onSelect: (unit: WeightUnit) => void;
-  selectedUnit: WeightUnit;
-}) {
-  return (
-    <div className="grid h-12 grid-cols-2 rounded-2xl bg-[#232323] p-1">
-      {(["lbs", "kg"] as const).map((unit) => {
-        const selected = unit === selectedUnit;
-
-        return (
-          <button
-            type="button"
-            key={unit}
-            onClick={() => onSelect(unit)}
-            className={
-              selected
-                ? "rounded-xl bg-emerald-500 px-3 text-sm font-bold text-white"
-                : "rounded-xl px-3 text-sm font-bold text-zinc-500 transition hover:text-zinc-200"
-            }
-          >
-            {unit}
-          </button>
-        );
-      })}
     </div>
   );
 }
@@ -544,7 +528,7 @@ function sortRecords(records: BodyweightRecord[]) {
 }
 
 function formatBodyweight(record: BodyweightRecord) {
-  return `${record.value} ${record.unit}`;
+  return `${record.display_weight} ${record.display_weight_unit}`;
 }
 
 function formatDate(isoDate: string) {

@@ -39,6 +39,12 @@ export const exerciseSelect = {
       },
     },
   },
+  weightUnitPreference: {
+    select: {
+      weightUnit: true,
+      updatedAt: true,
+    },
+  },
 } satisfies Prisma.ExerciseSelect;
 
 type SelectedExercise = ExerciseGetPayload<{ select: typeof exerciseSelect }>;
@@ -53,6 +59,7 @@ export type ExerciseResponse = {
   name: string;
   description: string | null;
   exercise_type: ExerciseType;
+  weight_unit_preference: "lbs" | "kg" | null;
   equipment_type: ReferenceResponse;
   primary_muscle_group: ReferenceResponse;
   secondary_muscle_groups: ReferenceResponse[];
@@ -205,6 +212,7 @@ export function toExerciseResponse(
     name: exercise.name,
     description: exercise.description,
     exercise_type: exercise.exerciseType,
+    weight_unit_preference: exercise.weightUnitPreference?.weightUnit ?? null,
     equipment_type: exercise.equipmentType,
     primary_muscle_group: exercise.primaryMuscleGroup,
     secondary_muscle_groups: exercise.secondaryMuscles.map(

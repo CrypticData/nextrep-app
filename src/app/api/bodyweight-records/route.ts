@@ -13,12 +13,20 @@ function badRequest(message: string) {
 }
 
 export async function GET() {
+  const settings = await prisma.appSettings.findUniqueOrThrow({
+    where: { id: 1 },
+    select: { defaultWeightUnit: true },
+  });
   const records = await prisma.bodyweightRecord.findMany({
     orderBy: [{ measuredAt: "desc" }, { createdAt: "desc" }],
     select: bodyweightRecordSelect,
   });
 
-  return NextResponse.json(records.map(toBodyweightRecordResponse));
+  return NextResponse.json(
+    records.map((record) =>
+      toBodyweightRecordResponse(record, settings.defaultWeightUnit),
+    ),
+  );
 }
 
 export async function POST(request: Request) {
@@ -30,7 +38,14 @@ export async function POST(request: Request) {
     return badRequest("Request body must be valid JSON.");
   }
 
-  const parsed = parseBodyweightRecordMutationBody(body);
+  const settings = await prisma.appSettings.findUniqueOrThrow({
+    where: { id: 1 },
+    select: { defaultWeightUnit: true },
+  });
+  const parsed = parseBodyweightRecordMutationBody(
+    body,
+    settings.defaultWeightUnit,
+  );
 
   if (!parsed.ok) {
     return badRequest(parsed.message);
@@ -45,7 +60,10 @@ export async function POST(request: Request) {
     select: bodyweightRecordSelect,
   });
 
-  return NextResponse.json(toBodyweightRecordResponse(record), {
-    status: 201,
-  });
+  return NextResponse.json(
+    toBodyweightRecordResponse(record, settings.defaultWeightUnit),
+    {
+      status: 201,
+    },
+  );
 }

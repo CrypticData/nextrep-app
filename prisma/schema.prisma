@@ -55,29 +55,43 @@ model MuscleGroup {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  primaryExercises   Exercise[]                       @relation("PrimaryMuscleGroup")
+  primaryExercises   Exercise[]                     @relation("PrimaryMuscleGroup")
   secondaryExercises ExerciseSecondaryMuscleGroup[]
 
   @@map("muscle_groups")
 }
 
 model Exercise {
-  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                   String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name                 String
   description          String?
   exerciseType         ExerciseType @default(weight_reps) @map("exercise_type")
-  equipmentTypeId      String   @map("equipment_type_id") @db.Uuid
-  primaryMuscleGroupId String   @map("primary_muscle_group_id") @db.Uuid
-  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  equipmentTypeId      String       @map("equipment_type_id") @db.Uuid
+  primaryMuscleGroupId String       @map("primary_muscle_group_id") @db.Uuid
+  createdAt            DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  equipmentType      EquipmentType @relation(fields: [equipmentTypeId], references: [id])
-  primaryMuscleGroup MuscleGroup   @relation("PrimaryMuscleGroup", fields: [primaryMuscleGroupId], references: [id])
-  secondaryMuscles   ExerciseSecondaryMuscleGroup[]
+  equipmentType           EquipmentType                  @relation(fields: [equipmentTypeId], references: [id])
+  primaryMuscleGroup      MuscleGroup                    @relation("PrimaryMuscleGroup", fields: [primaryMuscleGroupId], references: [id])
+  secondaryMuscles        ExerciseSecondaryMuscleGroup[]
+  weightUnitPreference    ExerciseWeightUnitPreference?
+  workoutSessionExercises WorkoutSessionExercise[]
 
   @@index([equipmentTypeId])
   @@index([primaryMuscleGroupId])
   @@map("exercises")
+}
+
+model ExerciseWeightUnitPreference {
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  exerciseId String     @unique @map("exercise_id") @db.Uuid
+  weightUnit WeightUnit @map("weight_unit")
+  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  exercise Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@map("exercise_weight_unit_preferences")
 }
 
 model ExerciseSecondaryMuscleGroup {
@@ -107,14 +121,77 @@ model BodyweightRecord {
 }
 
 model WorkoutSession {
-  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name        String?
-  description String?
-  status      WorkoutStatus @default(active)
-  startedAt   DateTime      @default(now()) @map("started_at") @db.Timestamptz(6)
-  endedAt     DateTime?     @map("ended_at") @db.Timestamptz(6)
-  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name              String?
+  description       String?
+  status            WorkoutStatus @default(active)
+  defaultWeightUnit WeightUnit    @default(lbs) @map("default_weight_unit")
+  startedAt         DateTime      @default(now()) @map("started_at") @db.Timestamptz(6)
+  endedAt           DateTime?     @map("ended_at") @db.Timestamptz(6)
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  exercises WorkoutSessionExercise[]
 
   @@map("workout_sessions")
+}
+
+enum WorkoutSetType {
+  normal
+  warmup
+  failure
+  drop
+}
+
+model WorkoutSessionExercise {
+  id                             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workoutSessionId               String      @map("workout_session_id") @db.Uuid
+  exerciseId                     String?     @map("exercise_id") @db.Uuid
+  orderIndex                     Int         @map("order_index")
+  inputWeightUnit                WeightUnit? @map("input_weight_unit")
+  exerciseNameSnapshot           String      @map("exercise_name_snapshot")
+  equipmentNameSnapshot          String?     @map("equipment_name_snapshot")
+  primaryMuscleGroupNameSnapshot String?     @map("primary_muscle_group_name_snapshot")
+  notes                          String?
+  createdAt                      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                      DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workoutSession WorkoutSession @relation(fields: [workoutSessionId], references: [id], onDelete: Cascade)
+  exercise       Exercise?      @relation(fields: [exerciseId], references: [id], onDelete: SetNull)
+  sets           WorkoutSet[]
+
+  @@unique([workoutSessionId, orderIndex])
+  @@index([exerciseId])
+  @@map("workout_session_exercises")
+}
+
+model WorkoutSet {
+  id                       String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workoutSessionExerciseId String         @map("workout_session_exercise_id") @db.Uuid
+  rowIndex                 Int            @map("row_index")
+  setNumber                Int?           @map("set_number")
+  setType                  WorkoutSetType @default(normal) @map("set_type")
+  parentSetId              String?        @map("parent_set_id") @db.Uuid
+  reps                     Int?
+  rpe                      Decimal?       @db.Decimal(3, 1)
+  checked                  Boolean        @default(false)
+  checkedAt                DateTime?      @map("checked_at") @db.Timestamptz(6)
+  weightInputValue         Decimal?       @map("weight_input_value") @db.Decimal(10, 2)
+  weightInputUnit          WeightUnit?    @map("weight_input_unit")
+  weightNormalizedValue    Decimal?       @map("weight_normalized_value") @db.Decimal(10, 2)
+  weightNormalizedUnit     WeightUnit?    @map("weight_normalized_unit")
+  bodyweightValue          Decimal?       @map("bodyweight_value") @db.Decimal(10, 2)
+  bodyweightUnit           WeightUnit?    @map("bodyweight_unit")
+  volumeValue              Decimal?       @map("volume_value") @db.Decimal(12, 2)
+  volumeUnit               WeightUnit?    @map("volume_unit")
+  createdAt                DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workoutSessionExercise WorkoutSessionExercise @relation(fields: [workoutSessionExerciseId], references: [id], onDelete: Cascade)
+  parentSet              WorkoutSet?            @relation("DropSetParent", fields: [parentSetId], references: [id], onDelete: SetNull)
+  dropSets               WorkoutSet[]           @relation("DropSetParent")
+
+  @@unique([workoutSessionExerciseId, rowIndex])
+  @@index([parentSetId])
+  @@map("workout_sets")
 }

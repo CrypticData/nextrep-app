@@ -10,6 +10,7 @@ export const workoutSessionSelect = {
   name: true,
   description: true,
   status: true,
+  defaultWeightUnit: true,
   startedAt: true,
   endedAt: true,
   createdAt: true,
@@ -30,6 +31,7 @@ export type WorkoutSessionResponse = {
   name: string | null;
   description: string | null;
   status: "active" | "completed";
+  default_weight_unit: "lbs" | "kg";
   started_at: string;
   ended_at: string | null;
   server_now: string;
@@ -56,6 +58,7 @@ export function toWorkoutSessionResponse(
     name: session.name,
     description: session.description,
     status: session.status,
+    default_weight_unit: session.defaultWeightUnit,
     started_at: session.startedAt.toISOString(),
     ended_at: session.endedAt?.toISOString() ?? null,
     server_now: new Date().toISOString(),
@@ -80,9 +83,17 @@ export async function createOrReturnActiveWorkoutSession() {
     return { session: activeSession, created: false };
   }
 
+  const settings = await prisma.appSettings.findUniqueOrThrow({
+    where: { id: 1 },
+    select: { defaultWeightUnit: true },
+  });
+
   try {
     const session = await prisma.workoutSession.create({
-      data: { status: "active" },
+      data: {
+        status: "active",
+        defaultWeightUnit: settings.defaultWeightUnit,
+      },
       select: workoutSessionSelect,
     });
 

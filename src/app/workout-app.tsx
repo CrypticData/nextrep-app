@@ -8,6 +8,7 @@ type WorkoutSession = {
   name: string | null;
   description: string | null;
   status: "active" | "completed";
+  default_weight_unit: "lbs" | "kg";
   started_at: string;
   ended_at: string | null;
   server_now: string;

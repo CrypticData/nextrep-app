@@ -51,7 +51,14 @@ export async function GET(
     return notFound();
   }
 
-  return NextResponse.json(toBodyweightRecordResponse(record));
+  const settings = await prisma.appSettings.findUniqueOrThrow({
+    where: { id: 1 },
+    select: { defaultWeightUnit: true },
+  });
+
+  return NextResponse.json(
+    toBodyweightRecordResponse(record, settings.defaultWeightUnit),
+  );
 }
 
 export async function PATCH(
@@ -72,7 +79,14 @@ export async function PATCH(
     return badRequest("Request body must be valid JSON.");
   }
 
-  const parsed = parseBodyweightRecordMutationBody(body);
+  const settings = await prisma.appSettings.findUniqueOrThrow({
+    where: { id: 1 },
+    select: { defaultWeightUnit: true },
+  });
+  const parsed = parseBodyweightRecordMutationBody(
+    body,
+    settings.defaultWeightUnit,
+  );
 
   if (!parsed.ok) {
     return badRequest(parsed.message);
@@ -89,7 +103,9 @@ export async function PATCH(
       select: bodyweightRecordSelect,
     });
 
-    return NextResponse.json(toBodyweightRecordResponse(record));
+    return NextResponse.json(
+      toBodyweightRecordResponse(record, settings.defaultWeightUnit),
+    );
   } catch (error) {
     if (isKnownPrismaError(error, "P2025")) {
       return notFound();
