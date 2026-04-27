@@ -281,12 +281,15 @@ This file records workspace changes made by Codex and Claude so future sessions 
 - Caveats:
   - The database/API foundations for workout exercises and sets are now present, but the live workout UI still does not render exercise cards or editable set rows yet.
   - Existing canonical DB enum remains `lbs`/`kg` per the v2 schema; `prephase4part2.md` sometimes says `lb`, which is accepted at API input but normalized to `lbs`.
+- Git operation:
+  - Committed the Pre Phase 4 Part 2 weight-unit/settings work as `739be91` (`Pre Phase 4 Part 2 weight unit settings`) on `main`.
+  - Not pushed in this pass.
 
 ## Current Known Git Status
 
 - Branch: `main`, tracking `origin/main`.
 - Phase 1, Phase 2, Phase 3, Phase 3.5 / Pre Phase 4A, and bodyweight Measures work are committed and pushed.
-- Current working tree has uncommitted Pre Phase 4 Part 2 changes plus untracked `phases/prephase4part2.md`, the new migration, and new unit/workout API helper/route files.
+- `main` is ahead of `origin/main` by the local Pre Phase 4 Part 2 commit; push is still pending.
 - Phase 3.5 / Pre Phase 4A work is committed and pushed through `4b92dcf`.
 - Handoff follow-up for that push is committed and pushed through `e039088`.
 - Final handoff status correction has been pushed after `e039088`.
