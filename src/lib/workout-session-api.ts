@@ -32,6 +32,7 @@ export type WorkoutSessionResponse = {
   status: "active" | "completed";
   started_at: string;
   ended_at: string | null;
+  server_now: string;
   created_at: string;
   updated_at: string;
 };
@@ -57,6 +58,7 @@ export function toWorkoutSessionResponse(
     status: session.status,
     started_at: session.startedAt.toISOString(),
     ended_at: session.endedAt?.toISOString() ?? null,
+    server_now: new Date().toISOString(),
     created_at: session.createdAt.toISOString(),
     updated_at: session.updatedAt.toISOString(),
   };

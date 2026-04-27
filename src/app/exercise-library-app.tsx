@@ -18,6 +18,7 @@ type Exercise = {
   id: string;
   name: string;
   description: string | null;
+  exercise_type: ExerciseType;
   equipment_type: Reference;
   primary_muscle_group: Reference;
   secondary_muscle_groups: Reference[];
@@ -28,10 +29,17 @@ type Exercise = {
 type ExercisePayload = {
   name: string;
   description: string | null;
+  exercise_type: ExerciseType;
   equipment_type_id: string;
   primary_muscle_group_id: string;
   secondary_muscle_group_ids: string[];
 };
+
+type ExerciseType =
+  | "weight_reps"
+  | "bodyweight_reps"
+  | "weighted_bodyweight"
+  | "assisted_bodyweight";
 
 type ModalMode =
   | { kind: "create" }
@@ -185,6 +193,10 @@ export function ExerciseLibraryApp() {
   return (
     <>
       <AppShell
+        backHref="/profile"
+        backLabel="Back to profile"
+        mainClassName="px-5 pb-6 pt-0"
+        subpage
         title="Exercises"
         action={
           <button
@@ -198,36 +210,36 @@ export function ExerciseLibraryApp() {
           </button>
         }
       >
-          {selectedExercise ? (
-            <ExerciseDetail
-              actionError={actionError}
-              deletingExerciseId={deletingExerciseId}
-              exercise={selectedExercise}
-              onBack={() => setSelectedExerciseId(null)}
-              onDelete={handleDeleteExercise}
-              onEdit={() =>
-                setModalMode({ kind: "edit", exercise: selectedExercise })
-              }
-            />
-          ) : (
-            <ExerciseList
-              equipmentFilterId={equipmentFilterId}
-              equipmentTypes={equipmentTypes}
-              exercises={filteredExercises}
-              isLoading={isLoading}
-              loadError={loadError}
-              muscleFilterId={muscleFilterId}
-              muscleGroups={muscleGroups}
-              onCreate={() => setModalMode({ kind: "create" })}
-              onRetry={() => void loadLibrary()}
-              onSearchChange={setSearch}
-              onSelectExercise={(exercise) => setSelectedExerciseId(exercise.id)}
-              onSetEquipmentFilter={setEquipmentFilterId}
-              onSetMuscleFilter={setMuscleFilterId}
-              search={search}
-              totalExerciseCount={exercises.length}
-            />
-          )}
+        {selectedExercise ? (
+          <ExerciseDetail
+            actionError={actionError}
+            deletingExerciseId={deletingExerciseId}
+            exercise={selectedExercise}
+            onBack={() => setSelectedExerciseId(null)}
+            onDelete={handleDeleteExercise}
+            onEdit={() =>
+              setModalMode({ kind: "edit", exercise: selectedExercise })
+            }
+          />
+        ) : (
+          <ExerciseList
+            equipmentFilterId={equipmentFilterId}
+            equipmentTypes={equipmentTypes}
+            exercises={filteredExercises}
+            isLoading={isLoading}
+            loadError={loadError}
+            muscleFilterId={muscleFilterId}
+            muscleGroups={muscleGroups}
+            onCreate={() => setModalMode({ kind: "create" })}
+            onRetry={() => void loadLibrary()}
+            onSearchChange={setSearch}
+            onSelectExercise={(exercise) => setSelectedExerciseId(exercise.id)}
+            onSetEquipmentFilter={setEquipmentFilterId}
+            onSetMuscleFilter={setMuscleFilterId}
+            search={search}
+            totalExerciseCount={exercises.length}
+          />
+        )}
       </AppShell>
 
       {modalMode ? (
@@ -300,7 +312,55 @@ function ExerciseList({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
+      <ExerciseListControls
+        equipmentFilterId={equipmentFilterId}
+        equipmentTypes={equipmentTypes}
+        exercisesShownCount={exercises.length}
+        muscleFilterId={muscleFilterId}
+        muscleGroups={muscleGroups}
+        onSearchChange={onSearchChange}
+        onSetEquipmentFilter={onSetEquipmentFilter}
+        onSetMuscleFilter={onSetMuscleFilter}
+        search={search}
+        totalExerciseCount={totalExerciseCount}
+      />
+      <ExerciseResults
+        exercises={exercises}
+        isLoading={isLoading}
+        onCreate={onCreate}
+        onSelectExercise={onSelectExercise}
+        totalExerciseCount={totalExerciseCount}
+      />
+    </div>
+  );
+}
+
+function ExerciseListControls({
+  equipmentFilterId,
+  equipmentTypes,
+  exercisesShownCount,
+  muscleFilterId,
+  muscleGroups,
+  onSearchChange,
+  onSetEquipmentFilter,
+  onSetMuscleFilter,
+  search,
+  totalExerciseCount,
+}: {
+  equipmentFilterId: string;
+  equipmentTypes: Reference[];
+  exercisesShownCount: number;
+  muscleFilterId: string;
+  muscleGroups: Reference[];
+  onSearchChange: (value: string) => void;
+  onSetEquipmentFilter: (value: string) => void;
+  onSetMuscleFilter: (value: string) => void;
+  search: string;
+  totalExerciseCount: number;
+}) {
+  return (
+    <div className="sticky top-0 z-20 -mx-5 space-y-4 bg-[#101010]/95 px-5 pb-4 pt-3 backdrop-blur">
       <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#1b1b1b] px-3 py-2.5">
         <SearchIcon className="h-4 w-4 shrink-0 text-zinc-500" />
         <input
@@ -337,11 +397,31 @@ function ExerciseList({
       </div>
 
       <p className="pt-1 text-sm font-medium text-zinc-500">
-        {totalExerciseCount === 0 ? "All Exercises" : `${exercises.length} shown`}
+        {totalExerciseCount === 0
+          ? "All Exercises"
+          : `${exercisesShownCount} shown`}
       </p>
+    </div>
+  );
+}
 
+function ExerciseResults({
+  exercises,
+  isLoading,
+  onCreate,
+  onSelectExercise,
+  totalExerciseCount,
+}: {
+  exercises: Exercise[];
+  isLoading: boolean;
+  onCreate: () => void;
+  onSelectExercise: (exercise: Exercise) => void;
+  totalExerciseCount: number;
+}) {
+  return (
+    <div className="space-y-3 pb-24">
       {isLoading ? (
-        <div className="space-y-3 pt-1">
+        <div className="space-y-3">
           {[0, 1, 2, 3].map((item) => (
             <div
               key={item}
@@ -588,6 +668,10 @@ function ExerciseDetail({
           />
           <DetailRow label="Secondary" value={secondaryText} />
           <DetailRow label="Equipment" value={exercise.equipment_type.name} />
+          <DetailRow
+            label="Type"
+            value={getExerciseTypeLabel(exercise.exercise_type)}
+          />
         </div>
       </div>
 
@@ -638,6 +722,9 @@ function ExerciseModal({
   const [description, setDescription] = useState(
     editingExercise?.description ?? "",
   );
+  const [exerciseType, setExerciseType] = useState<ExerciseType>(
+    editingExercise?.exercise_type ?? "weight_reps",
+  );
   const [equipmentTypeId, setEquipmentTypeId] = useState(
     editingExercise?.equipment_type.id ?? equipmentTypes[0]?.id ?? "",
   );
@@ -671,6 +758,7 @@ function ExerciseModal({
         name: name.trim(),
         description:
           description.trim().length > 0 ? description.trim() : null,
+        exercise_type: exerciseType,
         equipment_type_id: equipmentTypeId,
         primary_muscle_group_id: primaryMuscleGroupId,
         secondary_muscle_group_ids: secondaryMuscleGroupIds,
@@ -751,6 +839,17 @@ function ExerciseModal({
             />
           </FormField>
 
+          <FormField label="Exercise Type">
+            {editingExercise ? (
+              <ReadOnlyExerciseType exerciseType={exerciseType} />
+            ) : (
+              <ExerciseTypeSelect
+                selectedType={exerciseType}
+                onSelect={setExerciseType}
+              />
+            )}
+          </FormField>
+
           <FormField label="Equipment">
             <SingleSelectChips
               options={equipmentTypes}
@@ -793,6 +892,59 @@ function FormField({
         {label}
       </label>
       {children}
+    </div>
+  );
+}
+
+function ExerciseTypeSelect({
+  onSelect,
+  selectedType,
+}: {
+  onSelect: (type: ExerciseType) => void;
+  selectedType: ExerciseType;
+}) {
+  return (
+    <div className="grid gap-2">
+      {exerciseTypeOptions.map((option) => {
+        const selected = option.value === selectedType;
+
+        return (
+          <button
+            type="button"
+            key={option.value}
+            onClick={() => onSelect(option.value)}
+            className={
+              selected
+                ? "rounded-2xl border border-emerald-400/50 bg-emerald-500/15 px-4 py-3 text-left text-white"
+                : "rounded-2xl border border-white/10 bg-[#232323] px-4 py-3 text-left text-zinc-300 transition hover:border-white/15 hover:bg-[#2b2b2b]"
+            }
+          >
+            <span className="block text-sm font-semibold">
+              {option.label}
+            </span>
+            <span className="mt-1 block text-xs leading-5 text-zinc-500">
+              {option.description}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ReadOnlyExerciseType({
+  exerciseType,
+}: {
+  exerciseType: ExerciseType;
+}) {
+  const option = getExerciseTypeOption(exerciseType);
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-[#232323] px-4 py-3">
+      <p className="text-sm font-semibold text-white">{option.label}</p>
+      <p className="mt-1 text-xs leading-5 text-zinc-500">
+        Exercise type cannot be changed after creation.
+      </p>
     </div>
   );
 }
@@ -923,6 +1075,44 @@ function isErrorBody(value: unknown): value is { error: string } {
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Something went wrong.";
+}
+
+const exerciseTypeOptions: {
+  value: ExerciseType;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: "weight_reps",
+    label: "Weight & Reps",
+    description: "Bench press, curls, rows. Uses load plus reps.",
+  },
+  {
+    value: "bodyweight_reps",
+    label: "Bodyweight Reps",
+    description: "Pullups, situps, burpees. Uses reps only.",
+  },
+  {
+    value: "weighted_bodyweight",
+    label: "Weighted Bodyweight",
+    description: "Weighted pullups or dips. Uses added load plus reps.",
+  },
+  {
+    value: "assisted_bodyweight",
+    label: "Assisted Bodyweight",
+    description: "Assisted pullups or dips. Uses assistance plus reps.",
+  },
+];
+
+function getExerciseTypeLabel(exerciseType: ExerciseType) {
+  return getExerciseTypeOption(exerciseType).label;
+}
+
+function getExerciseTypeOption(exerciseType: ExerciseType) {
+  return (
+    exerciseTypeOptions.find((option) => option.value === exerciseType)
+      ?? exerciseTypeOptions[0]
+  );
 }
 
 function sortExercises(exercises: Exercise[]) {

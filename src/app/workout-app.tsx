@@ -10,6 +10,7 @@ type WorkoutSession = {
   status: "active" | "completed";
   started_at: string;
   ended_at: string | null;
+  server_now: string;
   created_at: string;
   updated_at: string;
 };
@@ -216,7 +217,10 @@ function ResumeWorkout({
   onResume: () => void;
   session: WorkoutSession;
 }) {
-  const elapsedSeconds = useElapsedSeconds(session.started_at);
+  const elapsedSeconds = useElapsedSeconds(
+    session.started_at,
+    session.server_now,
+  );
 
   return (
     <div className="space-y-4">
@@ -258,7 +262,10 @@ function LiveWorkout({
   onDiscard: () => void;
   session: WorkoutSession;
 }) {
-  const elapsedSeconds = useElapsedSeconds(session.started_at);
+  const elapsedSeconds = useElapsedSeconds(
+    session.started_at,
+    session.server_now,
+  );
 
   return (
     <div className="space-y-4">
@@ -305,22 +312,29 @@ function LiveWorkout({
   );
 }
 
-function useElapsedSeconds(startedAt: string) {
-  const [elapsedSeconds, setElapsedSeconds] = useState(() =>
-    getElapsedSeconds(startedAt),
-  );
+function useElapsedSeconds(startedAt: string, serverNow: string) {
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   useEffect(() => {
+    const clientAnchorMs = Date.now();
+    const serverAnchorMs = parseDateOrFallback(serverNow, clientAnchorMs);
+    const startedAtMs = parseDateOrFallback(startedAt, serverAnchorMs);
+    const updateElapsedSeconds = () => {
+      setElapsedSeconds(
+        getElapsedSeconds(startedAtMs, serverAnchorMs, clientAnchorMs),
+      );
+    };
+
+    updateElapsedSeconds();
+
     const interval = window.setInterval(() => {
-      setElapsedSeconds(getElapsedSeconds(startedAt));
-    }, 1000);
+      updateElapsedSeconds();
+    }, 250);
 
     return () => window.clearInterval(interval);
-  }, [startedAt]);
+  }, [serverNow, startedAt]);
 
-  const currentElapsedSeconds = getElapsedSeconds(startedAt);
-
-  return Math.max(elapsedSeconds, currentElapsedSeconds);
+  return elapsedSeconds;
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -361,14 +375,24 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Something went wrong.";
 }
 
-function getElapsedSeconds(startedAt: string) {
-  const started = Date.parse(startedAt);
+function parseDateOrFallback(value: string, fallback: number) {
+  const parsed = Date.parse(value);
 
-  if (Number.isNaN(started)) {
-    return 0;
-  }
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
 
-  return Math.max(0, Math.floor((Date.now() - started) / 1000));
+function getElapsedSeconds(
+  startedAtMs: number,
+  serverAnchorMs: number,
+  clientAnchorMs: number,
+) {
+  const estimatedServerNowMs =
+    serverAnchorMs + (Date.now() - clientAnchorMs);
+
+  return Math.max(
+    0,
+    Math.floor((estimatedServerNowMs - startedAtMs) / 1000),
+  );
 }
 
 function formatElapsed(totalSeconds: number) {

@@ -83,25 +83,50 @@ export async function PATCH(
   }
 
   try {
-    const exercise = await prisma.exercise.update({
-      where: { id },
-      data: {
-        name: parsed.data.name,
-        description: parsed.data.description,
-        equipmentTypeId: parsed.data.equipmentTypeId,
-        primaryMuscleGroupId: parsed.data.primaryMuscleGroupId,
-        secondaryMuscles: {
-          deleteMany: {},
-          create: parsed.data.secondaryMuscleGroupIds.map((muscleGroupId) => ({
-            muscleGroupId,
-          })),
+    const exercise = await prisma.$transaction(async (tx) => {
+      const existingExercise = await tx.exercise.findUnique({
+        where: { id },
+        select: { exerciseType: true },
+      });
+
+      if (!existingExercise) {
+        return null;
+      }
+
+      if (existingExercise.exerciseType !== parsed.data.exerciseType) {
+        throw new ExerciseTypeChangeError();
+      }
+
+      return tx.exercise.update({
+        where: { id },
+        data: {
+          name: parsed.data.name,
+          description: parsed.data.description,
+          equipmentTypeId: parsed.data.equipmentTypeId,
+          primaryMuscleGroupId: parsed.data.primaryMuscleGroupId,
+          secondaryMuscles: {
+            deleteMany: {},
+            create: parsed.data.secondaryMuscleGroupIds.map(
+              (muscleGroupId) => ({
+                muscleGroupId,
+              }),
+            ),
+          },
         },
-      },
-      select: exerciseSelect,
+        select: exerciseSelect,
+      });
     });
+
+    if (!exercise) {
+      return notFound();
+    }
 
     return NextResponse.json(toExerciseResponse(exercise));
   } catch (error) {
+    if (error instanceof ExerciseTypeChangeError) {
+      return badRequest("exercise_type cannot be changed after creation.");
+    }
+
     if (isKnownPrismaError(error, "P2025")) {
       return notFound();
     }
@@ -113,6 +138,8 @@ export async function PATCH(
     throw error;
   }
 }
+
+class ExerciseTypeChangeError extends Error {}
 
 export async function DELETE(
   _request: Request,

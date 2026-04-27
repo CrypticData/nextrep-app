@@ -1,4 +1,5 @@
 import { Prisma } from "@/generated/prisma/client";
+import type { ExerciseType } from "@/generated/prisma/enums";
 import type { ExerciseGetPayload } from "@/generated/prisma/models/Exercise";
 
 const uuidPattern =
@@ -8,6 +9,7 @@ export const exerciseSelect = {
   id: true,
   name: true,
   description: true,
+  exerciseType: true,
   createdAt: true,
   updatedAt: true,
   equipmentType: {
@@ -50,6 +52,7 @@ export type ExerciseResponse = {
   id: string;
   name: string;
   description: string | null;
+  exercise_type: ExerciseType;
   equipment_type: ReferenceResponse;
   primary_muscle_group: ReferenceResponse;
   secondary_muscle_groups: ReferenceResponse[];
@@ -60,6 +63,7 @@ export type ExerciseResponse = {
 export type ExerciseMutationInput = {
   name: string;
   description: string | null;
+  exerciseType: ExerciseType;
   equipmentTypeId: string;
   primaryMuscleGroupId: string;
   secondaryMuscleGroupIds: string[];
@@ -100,6 +104,11 @@ export function parseExerciseMutationBody(value: unknown): ParseResult {
     return description;
   }
 
+  const exerciseType = readExerciseType(value.exercise_type);
+  if (!exerciseType.ok) {
+    return exerciseType;
+  }
+
   const equipmentTypeId = readRequiredUuid(
     value.equipment_type_id,
     "equipment_type_id",
@@ -132,6 +141,7 @@ export function parseExerciseMutationBody(value: unknown): ParseResult {
     data: {
       name: name.data,
       description: description.data,
+      exerciseType: exerciseType.data,
       equipmentTypeId: equipmentTypeId.data,
       primaryMuscleGroupId: primaryMuscleGroupId.data,
       secondaryMuscleGroupIds: secondaryMuscleGroupIds.data,
@@ -194,6 +204,7 @@ export function toExerciseResponse(
     id: exercise.id,
     name: exercise.name,
     description: exercise.description,
+    exercise_type: exercise.exerciseType,
     equipment_type: exercise.equipmentType,
     primary_muscle_group: exercise.primaryMuscleGroup,
     secondary_muscle_groups: exercise.secondaryMuscles.map(
@@ -206,6 +217,29 @@ export function toExerciseResponse(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readExerciseType(
+  value: unknown,
+): { ok: true; data: ExerciseType } | { ok: false; message: string } {
+  if (value === undefined || value === null) {
+    return { ok: true, data: "weight_reps" };
+  }
+
+  if (
+    value === "weight_reps" ||
+    value === "bodyweight_reps" ||
+    value === "weighted_bodyweight" ||
+    value === "assisted_bodyweight"
+  ) {
+    return { ok: true, data: value };
+  }
+
+  return {
+    ok: false,
+    message:
+      "exercise_type must be one of weight_reps, bodyweight_reps, weighted_bodyweight, assisted_bodyweight.",
+  };
 }
 
 function readRequiredString(

@@ -137,8 +137,86 @@ This file records workspace changes made by Codex and Claude so future sessions 
   - One UX gap surfaced: Resume card has no Discard button, so stale-session cleanup takes two taps (Resume → live shell → Discard). User chose to leave it for now.
 - Committed Phase 3 + the planning doc, pushed to `origin/main`. No code changes from Claude in this pass beyond this log entry.
 
+## 2026-04-26 (Codex)
+
+- Implemented the pre-Phase-4 `phases/phase3.5.md` UI/navigation rework:
+  - Updated `AppShell` bottom nav from `Workout + Exercises` to `Workout + Profile`.
+  - Added `/profile` with a single-user Profile menu, profile summary, dashboard tiles, and workout-history placeholder/card view-model scaffolding.
+  - Moved the Exercise Library mount to `/profile/exercises`; `/exercises` now redirects to `/profile/exercises` for compatibility.
+  - Added `/profile/measures` as a placeholder screen reachable from the Profile dashboard.
+  - Refactored the Exercise Library list into sticky `ExerciseListControls` and normal-flow `ExerciseResults` so search/filter/count stay pinned inside the existing `AppShell` main scroll container.
+- Read local Next 16 docs for App Router pages and navigation before adding the profile routes and client-side dashboard navigation.
+- Validation completed:
+  - `npm run lint` passed.
+  - `npm run build` passed.
+  - Running dev stack already serves `http://localhost:3000`.
+  - `curl -I` checks returned `200` for `/profile`, `/profile/exercises`, and `/profile/measures`; `/exercises` returned `307` with `location: /profile/exercises`.
+- Follow-up scroll fix after user testing:
+  - Updated `AppShell` to use constrained `h-dvh`/`overflow-hidden` shell containers, `shrink-0` header/nav, and `min-h-0 flex-1 overflow-y-auto` on `<main>` so the main pane is the actual scroll container for sticky exercise controls.
+  - Re-ran `npm run lint` and `npm run build`; both passed.
+- Follow-up sticky spacing fix after user testing:
+  - Updated `ExerciseListControls` with `-mt-4` and reduced top padding so the sticky controls panel starts directly under the fixed header instead of leaving a shell-padding gap.
+  - Re-ran `npm run lint` and `npm run build`; both passed.
+- Second sticky spacing fix after user testing:
+  - Added optional `mainClassName` to `AppShell` and set Exercise Library to `px-5 pb-6 pt-0`, removing the source top padding from the exercise scroll container instead of relying on negative margin.
+  - Removed the `-mt-4` workaround from `ExerciseListControls`; the sticky controls now start from a zero-top-padding main pane.
+  - Re-ran `npm run lint` and `npm run build`; both passed.
+- Follow-up subpage header change after user feedback:
+  - Added `subpage`, `backHref`, and `backLabel` support to `AppShell`.
+  - Updated `/profile/exercises` to show a left back button to Profile, centered `Exercises` title, no `NextRep` eyebrow, and the existing create action on the right.
+  - Updated `/profile/measures` to use the same subpage header pattern.
+  - Re-ran `npm run lint` and `npm run build`; both passed.
+- Started remaining Pre Phase 4A exercise-type work:
+  - Added Prisma `ExerciseType` enum and `Exercise.exerciseType @default(weight_reps) @map("exercise_type")`.
+  - Added migration `20260426220000_add_exercise_type`; it adds `exercise_type` as `NOT NULL DEFAULT 'weight_reps'`, preserving existing user-created exercises and backfilling them as Weight & Reps.
+  - Applied the migration with `npx prisma migrate dev` and regenerated Prisma client.
+  - Updated Exercise API validation, create/update writes, and response mapping for snake_case `exercise_type`; omitted `exercise_type` defaults to `weight_reps`.
+  - Added Exercise Type selector to create/edit exercise UI and displays Type in exercise detail.
+  - Restarted the app container after Prisma generation.
+  - Validation: `npx prisma validate`, `npx prisma migrate status`, `npm run lint`, and `npm run build` passed.
+  - DB check confirmed existing rows were preserved: `select exercise_type, count(*) from exercises group by exercise_type` returned `weight_reps | 17`.
+  - API check confirmed `GET /api/exercises` includes `exercise_type: "weight_reps"` for existing exercises.
+- Follow-up immutable exercise type rule after user correction:
+  - Edit Exercise now shows Exercise Type as read-only with copy that it cannot be changed after creation.
+  - `PATCH /api/exercises/[id]` now reads the existing row in a transaction and rejects any `exercise_type` change with `400`.
+  - Re-ran `npm run lint` and `npm run build`; both passed.
+  - API check: trying to PATCH existing `Chest Fly` from `weight_reps` to `bodyweight_reps` returned `400 {"error":"exercise_type cannot be changed after creation."}`.
+- Follow-up workout timer responsiveness fix:
+  - Updated `useElapsedSeconds` in `src/app/workout-app.tsx` to reset immediately for each `started_at`, run an immediate update before the first interval tick, tick every 250ms, and clamp small future `started_at` values to the current client time so client/server clock skew cannot make a just-started timer appear frozen.
+  - Re-ran `npm run lint` and `npm run build`; both passed.
+  - Restarted the app container so the running dev server serves the updated timer code.
+- Follow-up workout timer refresh fix:
+  - Added `server_now` to workout session API responses and changed the client timer to calculate elapsed time from a stable server-time anchor plus client monotonic elapsed time.
+  - This replaces the prior client-clock clamp, which could make the timer reset on every refresh if the server clock was ahead of the browser clock.
+  - Re-ran `npm run lint` and `npm run build`; both passed.
+  - Restarted the app container.
+  - Verified `POST /api/workout-sessions` returns `server_now`; created temporary session `da7ab4a3-62e2-48eb-9115-f6a26bbae9c7` for the check and discarded it with `204`.
+- Caveats:
+  - `phases/phase3.5.md` was already untracked user input and remains untracked.
+  - Profile edit/settings/metrics/calendar remain placeholders by design; no backend profile or workout history data was added.
+
+## 2026-04-27 (Codex)
+
+- Preparing the completed Phase 3.5 / Pre Phase 4A changes for git:
+  - Profile navigation/subpage UI is implemented and includes the remembered submenu header pattern: left back button, centered title, optional right action, and no `NextRep` eyebrow.
+  - Exercise Library lives under `/profile/exercises`; `/exercises` redirects there.
+  - Exercise list search/filter/count controls are sticky inside the corrected `AppShell` scroll container.
+  - Added `ExerciseType` and `exercise_type` with default/backfill `weight_reps`; existing user-created exercises were preserved.
+  - Exercise type is selectable only on create; edit UI is read-only and API rejects type changes.
+  - Workout timer now uses `server_now` from session responses to avoid delayed starts and refresh resets under client/server clock skew.
+- Validation already completed before commit:
+  - `npx prisma validate` passed.
+  - `npx prisma migrate dev` applied `20260426220000_add_exercise_type`.
+  - `npx prisma generate` completed.
+  - `npx prisma migrate status` reported DB schema up to date.
+  - `npm run lint` passed after each follow-up.
+  - `npm run build` passed after each follow-up.
+  - API checks confirmed existing exercises report `exercise_type: "weight_reps"`, changing an existing exercise type returns `400`, and workout session responses include `server_now`.
+- Including `phases/phase3.5.md` and `phases/prephase4.md` in git with this push so future agents can see the planning inputs.
+
 ## Current Known Git Status
 
 - Branch: `main`, tracking `origin/main`.
 - Phase 1, Phase 2, and Phase 3 are all committed and pushed.
 - `phases/phase3.md` is now in git as part of the Phase 3 push.
+- Working tree is being committed and pushed with Phase 3.5 / Pre Phase 4A changes.

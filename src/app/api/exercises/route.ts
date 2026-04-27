@@ -49,6 +49,7 @@ export async function POST(request: Request) {
       data: {
         name: parsed.data.name,
         description: parsed.data.description,
+        exerciseType: parsed.data.exerciseType,
         equipmentTypeId: parsed.data.equipmentTypeId,
         primaryMuscleGroupId: parsed.data.primaryMuscleGroupId,
         secondaryMuscles: {

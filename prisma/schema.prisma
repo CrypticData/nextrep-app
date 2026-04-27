@@ -22,6 +22,13 @@ enum WorkoutStatus {
   completed
 }
 
+enum ExerciseType {
+  weight_reps
+  bodyweight_reps
+  weighted_bodyweight
+  assisted_bodyweight
+}
+
 model AppSettings {
   id                Int        @id @default(1)
   defaultWeightUnit WeightUnit @default(lbs) @map("default_weight_unit")
@@ -58,6 +65,7 @@ model Exercise {
   id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name                 String
   description          String?
+  exerciseType         ExerciseType @default(weight_reps) @map("exercise_type")
   equipmentTypeId      String   @map("equipment_type_id") @db.Uuid
   primaryMuscleGroupId String   @map("primary_muscle_group_id") @db.Uuid
   createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)

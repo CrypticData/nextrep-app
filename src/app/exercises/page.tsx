@@ -1,5 +1,5 @@
-import { ExerciseLibraryApp } from "../exercise-library-app";
+import { redirect } from "next/navigation";
 
 export default function ExercisesPage() {
-  return <ExerciseLibraryApp />;
+  redirect("/profile/exercises");
 }
