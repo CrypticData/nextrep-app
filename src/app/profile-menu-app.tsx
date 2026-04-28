@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { AppShell } from "./app-shell";
 
@@ -15,14 +17,11 @@ type WorkoutHistoryState = "loading" | "ready" | "empty" | "unavailable";
 
 type WorkoutHistoryCardViewModel = {
   id: string;
-  user: {
-    username: string;
-    avatarUrl?: string | null;
-  };
   title: string;
   completedAtLabel: string;
   durationLabel: string;
   volumeLabel: string;
+  setCountLabel: string;
   exercises: WorkoutExercisePreview[];
 };
 
@@ -30,8 +29,30 @@ type WorkoutExercisePreview = {
   id: string;
   name: string;
   setCount: number;
+  metadataLabel: string;
   thumbnailLabel: string;
-  thumbnailUrl?: string | null;
+};
+
+type CompletedWorkoutListItem = {
+  id: string;
+  name: string;
+  description: string | null;
+  started_at: string;
+  ended_at: string;
+  duration_seconds: number;
+  default_weight_unit: "lbs" | "kg";
+  recorded_set_count: number;
+  volume: {
+    value: number;
+    unit: "lbs" | "kg";
+  };
+  exercises: {
+    id: string;
+    name: string;
+    equipment_name: string | null;
+    primary_muscle_group_name: string | null;
+    recorded_set_count: number;
+  }[];
 };
 
 type DashboardTileConfig = {
@@ -50,12 +71,58 @@ const profile: UserProfile = {
 
 export function ProfileMenuApp() {
   const router = useRouter();
-  const workoutHistoryState: WorkoutHistoryState = "unavailable";
-  const workouts: WorkoutHistoryCardViewModel[] = [];
+  const [workoutHistoryState, setWorkoutHistoryState] =
+    useState<WorkoutHistoryState>("loading");
+  const [workouts, setWorkouts] = useState<WorkoutHistoryCardViewModel[]>([]);
+  const [workoutHistoryError, setWorkoutHistoryError] = useState<string | null>(
+    null,
+  );
+  const currentProfile = useMemo(
+    () => ({ ...profile, workoutCount: workouts.length }),
+    [workouts.length],
+  );
+
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    async function loadCompletedWorkouts() {
+      setWorkoutHistoryState("loading");
+      setWorkoutHistoryError(null);
+
+      try {
+        const response = await fetch("/api/workout-sessions/completed", {
+          signal: abortController.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(await readErrorResponse(response));
+        }
+
+        const data = (await response.json()) as CompletedWorkoutListItem[];
+        const mappedWorkouts = data.map(toWorkoutHistoryCardViewModel);
+
+        if (!abortController.signal.aborted) {
+          setWorkouts(mappedWorkouts);
+          setWorkoutHistoryState(
+            mappedWorkouts.length > 0 ? "ready" : "empty",
+          );
+        }
+      } catch (error) {
+        if (!abortController.signal.aborted) {
+          setWorkoutHistoryError(getErrorMessage(error));
+          setWorkoutHistoryState("unavailable");
+        }
+      }
+    }
+
+    void loadCompletedWorkouts();
+
+    return () => abortController.abort();
+  }, []);
 
   return (
     <AppShell
-      title={profile.username}
+      title={currentProfile.username}
       action={
         <div className="flex items-center gap-2">
           <button
@@ -78,14 +145,18 @@ export function ProfileMenuApp() {
       }
     >
       <div className="space-y-6 pb-24">
-        <ProfileSummary profile={profile} />
+        <ProfileSummary profile={currentProfile} />
         <DashboardSection
           onOpenExercises={() => router.push("/profile/exercises")}
           onOpenMeasures={() => router.push("/profile/measures")}
           onOpenMetrics={() => window.alert("Metrics arrive later.")}
           onOpenCalendar={() => window.alert("Calendar arrives later.")}
         />
-        <WorkoutHistorySection state={workoutHistoryState} workouts={workouts} />
+        <WorkoutHistorySection
+          errorMessage={workoutHistoryError}
+          state={workoutHistoryState}
+          workouts={workouts}
+        />
       </div>
     </AppShell>
   );
@@ -214,9 +285,11 @@ function DashboardTile({
 }
 
 function WorkoutHistorySection({
+  errorMessage,
   state,
   workouts,
 }: {
+  errorMessage: string | null;
   state: WorkoutHistoryState;
   workouts: WorkoutHistoryCardViewModel[];
 }) {
@@ -224,7 +297,10 @@ function WorkoutHistorySection({
     <section>
       <h2 className="mb-3 text-sm font-semibold text-zinc-500">Workouts</h2>
       {state === "loading" ? (
-        <div className="h-32 animate-pulse rounded-2xl bg-white/[0.04]" />
+        <div className="space-y-3">
+          <div className="h-32 animate-pulse rounded-2xl bg-white/[0.04]" />
+          <div className="h-24 animate-pulse rounded-2xl bg-white/[0.035]" />
+        </div>
       ) : null}
       {state === "ready" && workouts.length > 0 ? (
         <div className="space-y-3">
@@ -233,12 +309,20 @@ function WorkoutHistorySection({
           ))}
         </div>
       ) : null}
-      {(state === "unavailable" ||
-        state === "empty" ||
-        (state === "ready" && workouts.length === 0)) ? (
-        <div className="rounded-3xl border border-white/[0.06] bg-white/[0.03] px-5 py-8 text-center">
+      {state === "empty" || (state === "ready" && workouts.length === 0) ? (
+        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.03] px-5 py-8 text-center">
           <p className="text-sm font-medium text-zinc-400">
-            Workout history will appear here.
+            Saved workouts will appear here.
+          </p>
+        </div>
+      ) : null}
+      {state === "unavailable" ? (
+        <div className="rounded-2xl border border-red-400/20 bg-red-500/[0.06] px-5 py-4">
+          <p className="text-sm font-semibold text-red-100">
+            Workout history could not load.
+          </p>
+          <p className="mt-1 text-sm text-red-100/70">
+            {errorMessage ?? "Request failed."}
           </p>
         </div>
       ) : null}
@@ -252,7 +336,11 @@ function WorkoutHistoryCard({
   workout: WorkoutHistoryCardViewModel;
 }) {
   return (
-    <article className="rounded-3xl border border-white/[0.08] bg-[#181818] p-4">
+    <Link
+      href={`/profile/workouts/${workout.id}`}
+      className="block rounded-2xl border border-white/[0.08] bg-[#181818] p-4 text-left transition hover:border-white/15 hover:bg-[#1d1d1d] active:scale-[0.99]"
+      aria-label={`Open ${workout.title}`}
+    >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <h3 className="truncate text-base font-semibold text-white">
@@ -262,6 +350,9 @@ function WorkoutHistoryCard({
             {workout.completedAtLabel}
           </p>
         </div>
+        <span className="shrink-0 rounded-full bg-white/[0.06] px-3 py-1 text-xs font-semibold text-zinc-300">
+          {workout.setCountLabel}
+        </span>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2">
         <WorkoutMetric label="Duration" value={workout.durationLabel} />
@@ -277,7 +368,7 @@ function WorkoutHistoryCard({
           ))}
         </div>
       ) : null}
-    </article>
+    </Link>
   );
 }
 
@@ -304,12 +395,114 @@ function WorkoutExercisePreviewRow({
         <p className="truncate text-sm font-semibold text-white">
           {exercise.name}
         </p>
-        <p className="mt-0.5 text-xs font-medium text-zinc-500">
-          {exercise.setCount} sets
+        <p className="mt-0.5 truncate text-xs font-medium text-zinc-500">
+          {formatSetCount(exercise.setCount)}
+          {exercise.metadataLabel ? ` · ${exercise.metadataLabel}` : ""}
         </p>
       </div>
     </div>
   );
+}
+
+function toWorkoutHistoryCardViewModel(
+  workout: CompletedWorkoutListItem,
+): WorkoutHistoryCardViewModel {
+  return {
+    id: workout.id,
+    title: workout.name,
+    completedAtLabel: formatDateTime(workout.ended_at),
+    durationLabel: formatDuration(workout.duration_seconds),
+    volumeLabel: formatVolume(workout.volume.value, workout.volume.unit),
+    setCountLabel: formatSetCount(workout.recorded_set_count),
+    exercises: workout.exercises.map((exercise) => ({
+      id: exercise.id,
+      name: exercise.name,
+      setCount: exercise.recorded_set_count,
+      metadataLabel: compactLabels([
+        exercise.equipment_name,
+        exercise.primary_muscle_group_name,
+      ]),
+      thumbnailLabel: exercise.name,
+    })),
+  };
+}
+
+function compactLabels(labels: Array<string | null>) {
+  return labels.filter((label): label is string => Boolean(label)).join(" · ");
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Saved workout";
+  }
+
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatDuration(totalSeconds: number) {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+  if (hours > 0 && minutes > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+
+  if (hours > 0) {
+    return `${hours}h`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}m`;
+  }
+
+  return `${Math.max(0, totalSeconds)}s`;
+}
+
+function formatVolume(value: number, unit: "lbs" | "kg") {
+  return `${formatDecimal(value)} ${unit}`;
+}
+
+function formatDecimal(value: number) {
+  if (!Number.isFinite(value)) {
+    return "0";
+  }
+
+  return Number.isInteger(value) ? value.toString() : value.toFixed(2);
+}
+
+function formatSetCount(count: number) {
+  return `${count} ${count === 1 ? "set" : "sets"}`;
+}
+
+async function readErrorResponse(response: Response) {
+  try {
+    const data: unknown = await response.json();
+
+    if (
+      typeof data === "object" &&
+      data !== null &&
+      !Array.isArray(data) &&
+      "error" in data &&
+      typeof data.error === "string"
+    ) {
+      return data.error;
+    }
+  } catch {
+    return response.statusText || "Request failed.";
+  }
+
+  return response.statusText || "Request failed.";
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Something went wrong.";
 }
 
 type IconProps = {
