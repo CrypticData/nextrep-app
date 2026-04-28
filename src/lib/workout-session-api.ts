@@ -257,6 +257,7 @@ export async function discardInvalidSets(id: string) {
         const reindexResult = await reindexWorkoutExerciseSets(
           tx,
           workoutSessionExerciseId,
+          { promoteOrphanedDrops: true },
         );
 
         if (!reindexResult.ok) {
@@ -394,6 +395,7 @@ export async function finishWorkout(id: string, payload: FinishWorkoutPayload) {
           const reindexResult = await reindexWorkoutExerciseSets(
             tx,
             workoutSessionExerciseId,
+            { promoteOrphanedDrops: true },
           );
 
           if (!reindexResult.ok) {
@@ -478,6 +480,8 @@ function invalidWeightedSetWhere(
   };
 }
 
+// Checked state is intentionally ignored. Empty rows are discarded regardless
+// of checkmark because the checkmark is a visual indicator, never a save filter.
 function emptySetWhere(workoutSessionId: string): Prisma.WorkoutSetWhereInput {
   return {
     OR: [{ weightInputValue: null }, { weightInputValue: 0 }],

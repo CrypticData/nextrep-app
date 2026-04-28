@@ -395,6 +395,7 @@ export async function deleteActiveWorkoutSet(workoutSetId: string) {
 export async function reindexWorkoutExerciseSets(
   tx: Prisma.TransactionClient,
   workoutSessionExerciseId: string,
+  options: { promoteOrphanedDrops?: boolean } = {},
 ) {
   const sets = await tx.workoutSet.findMany({
     where: { workoutSessionExerciseId },
@@ -405,7 +406,7 @@ export async function reindexWorkoutExerciseSets(
       setType: true,
     },
   });
-  const numbering = recalculateSetNumbering(sets);
+  const numbering = recalculateSetNumbering(sets, options);
 
   if (!numbering.ok) {
     return { ok: false as const };
@@ -432,6 +433,7 @@ export async function reindexWorkoutExerciseSets(
         rowIndex: index + 1,
         setNumber: setNumbering.setNumber,
         parentSetId: setNumbering.parentSetId,
+        ...(setNumbering.setType ? { setType: setNumbering.setType } : {}),
       },
       select: { id: true },
     });
@@ -639,19 +641,16 @@ async function findLatestBodyweightInUnit(
 
 function recalculateSetNumbering(
   sets: Array<{ id: string; setType: WorkoutSetType }>,
+  options: { promoteOrphanedDrops?: boolean } = {},
 ):
   | {
       ok: true;
-      data: Array<{
-        id: string;
-        setNumber: number | null;
-        parentSetId: string | null;
-      }>;
+      data: SetNumberingResult[];
     }
   | { ok: false } {
   let nextSetNumber = 1;
   let lastNumberedSetId: string | null = null;
-  const data = [];
+  const data: SetNumberingResult[] = [];
 
   for (const set of sets) {
     if (set.setType === "warmup") {
@@ -661,7 +660,20 @@ function recalculateSetNumbering(
 
     if (set.setType === "drop") {
       if (!lastNumberedSetId) {
-        return { ok: false };
+        if (!options.promoteOrphanedDrops) {
+          return { ok: false };
+        }
+
+        const setNumber = nextSetNumber;
+        nextSetNumber += 1;
+        lastNumberedSetId = set.id;
+        data.push({
+          id: set.id,
+          setNumber,
+          parentSetId: null,
+          setType: "normal",
+        });
+        continue;
       }
 
       data.push({
@@ -680,6 +692,13 @@ function recalculateSetNumbering(
 
   return { ok: true, data };
 }
+
+type SetNumberingResult = {
+  id: string;
+  setNumber: number | null;
+  parentSetId: string | null;
+  setType?: "normal";
+};
 
 function readNullableDecimal(
   value: unknown,
