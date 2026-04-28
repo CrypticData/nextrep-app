@@ -28,6 +28,7 @@ type ActiveWorkoutContextValue = {
   clear: () => void;
   error: string | null;
   isLoading: boolean;
+  offsetMs: number | null;
   openLiveRequest: number;
   refresh: (options?: {
     suppressError?: boolean;
@@ -43,6 +44,7 @@ const ActiveWorkoutContext = createContext<ActiveWorkoutContextValue | null>(
 
 export function ActiveWorkoutProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<ActiveWorkoutSession | null>(null);
+  const [offsetMs, setOffsetMs] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [openLiveRequest, setOpenLiveRequest] = useState(0);
@@ -50,6 +52,7 @@ export function ActiveWorkoutProvider({ children }: { children: ReactNode }) {
   const replaceSession = useCallback(
     (nextSession: ActiveWorkoutSession | null) => {
       setSession(nextSession);
+      setOffsetMs(getServerClockOffsetMs(nextSession));
       setError(null);
       setHasLoaded(true);
     },
@@ -67,7 +70,7 @@ export function ActiveWorkoutProvider({ children }: { children: ReactNode }) {
           "/api/workout-sessions/active",
         );
 
-        setSession(activeSession);
+        replaceSession(activeSession);
         return activeSession;
       } catch (refreshError) {
         if (!options.suppressError) {
@@ -79,7 +82,7 @@ export function ActiveWorkoutProvider({ children }: { children: ReactNode }) {
         setHasLoaded(true);
       }
     },
-    [],
+    [replaceSession],
   );
 
   useEffect(() => {
@@ -96,13 +99,22 @@ export function ActiveWorkoutProvider({ children }: { children: ReactNode }) {
       error,
       isLoading: !hasLoaded,
       openLiveRequest,
+      offsetMs,
       refresh,
       requestOpenLive: () =>
         setOpenLiveRequest((currentRequest) => currentRequest + 1),
       session,
       setSession: replaceSession,
     }),
-    [error, hasLoaded, openLiveRequest, refresh, replaceSession, session],
+    [
+      error,
+      hasLoaded,
+      offsetMs,
+      openLiveRequest,
+      refresh,
+      replaceSession,
+      session,
+    ],
   );
 
   return (
@@ -122,6 +134,37 @@ export function useActiveWorkout() {
   }
 
   return context;
+}
+
+export function useElapsedSeconds(startedAt: string) {
+  const { offsetMs } = useActiveWorkout();
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    const startedAtMs = Date.parse(startedAt);
+
+    if (Number.isNaN(startedAtMs)) {
+      const timeout = window.setTimeout(() => setElapsedSeconds(0), 0);
+
+      return () => window.clearTimeout(timeout);
+    }
+
+    const updateElapsedSeconds = () => {
+      const estimatedServerNowMs = Date.now() + (offsetMs ?? 0);
+
+      setElapsedSeconds(
+        Math.max(0, Math.floor((estimatedServerNowMs - startedAtMs) / 1000)),
+      );
+    };
+
+    updateElapsedSeconds();
+
+    const interval = window.setInterval(updateElapsedSeconds, 250);
+
+    return () => window.clearInterval(interval);
+  }, [offsetMs, startedAt]);
+
+  return elapsedSeconds;
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -160,4 +203,14 @@ function isErrorBody(value: unknown): value is { error: string } {
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Something went wrong.";
+}
+
+function getServerClockOffsetMs(session: ActiveWorkoutSession | null) {
+  if (!session) {
+    return null;
+  }
+
+  const serverNowMs = Date.parse(session.server_now);
+
+  return Number.isNaN(serverNowMs) ? null : serverNowMs - Date.now();
 }

@@ -1,8 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { useActiveWorkout } from "./active-workout-context";
+import { useState } from "react";
+import { useActiveWorkout, useElapsedSeconds } from "./active-workout-context";
 import type { ActiveWorkoutSession } from "./active-workout-context";
 import { ConfirmSheet } from "./confirm-sheet";
 
@@ -13,10 +13,7 @@ export function ActiveWorkoutCard({
 }) {
   const router = useRouter();
   const { clear, requestOpenLive } = useActiveWorkout();
-  const elapsedSeconds = useElapsedSeconds(
-    session.started_at,
-    session.server_now,
-  );
+  const elapsedSeconds = useElapsedSeconds(session.started_at);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [isDiscarding, setIsDiscarding] = useState(false);
   const [discardError, setDiscardError] = useState<string | null>(null);
@@ -114,31 +111,6 @@ export function ActiveWorkoutCard({
   );
 }
 
-function useElapsedSeconds(startedAt: string, serverNow: string) {
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-
-  useEffect(() => {
-    const clientAnchorMs = Date.now();
-    const serverAnchorMs = parseDateOrFallback(serverNow, clientAnchorMs);
-    const startedAtMs = parseDateOrFallback(startedAt, serverAnchorMs);
-    const updateElapsedSeconds = () => {
-      setElapsedSeconds(
-        getElapsedSeconds(startedAtMs, serverAnchorMs, clientAnchorMs),
-      );
-    };
-
-    updateElapsedSeconds();
-
-    const interval = window.setInterval(() => {
-      updateElapsedSeconds();
-    }, 250);
-
-    return () => window.clearInterval(interval);
-  }, [serverNow, startedAt]);
-
-  return elapsedSeconds;
-}
-
 async function readErrorResponse(response: Response) {
   try {
     const data: unknown = await response.json();
@@ -165,26 +137,6 @@ function isErrorBody(value: unknown): value is { error: string } {
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Something went wrong.";
-}
-
-function parseDateOrFallback(value: string, fallback: number) {
-  const parsed = Date.parse(value);
-
-  return Number.isNaN(parsed) ? fallback : parsed;
-}
-
-function getElapsedSeconds(
-  startedAtMs: number,
-  serverAnchorMs: number,
-  clientAnchorMs: number,
-) {
-  const estimatedServerNowMs =
-    serverAnchorMs + (Date.now() - clientAnchorMs);
-
-  return Math.max(
-    0,
-    Math.floor((estimatedServerNowMs - startedAtMs) / 1000),
-  );
 }
 
 function formatElapsedShort(totalSeconds: number) {

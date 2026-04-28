@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { useActiveWorkout } from "./active-workout-context";
+import { useActiveWorkout, useElapsedSeconds } from "./active-workout-context";
 import type { ActiveWorkoutSession } from "./active-workout-context";
 import { AppShell } from "./app-shell";
 import { ConfirmSheet } from "./confirm-sheet";
@@ -309,10 +309,7 @@ function LiveWorkout({
   session: WorkoutSession;
 }) {
   const { refresh } = useActiveWorkout();
-  const elapsedSeconds = useElapsedSeconds(
-    session.started_at,
-    session.server_now,
-  );
+  const elapsedSeconds = useElapsedSeconds(session.started_at);
   const [workoutExercises, setWorkoutExercises] = useState<
     WorkoutSessionExercise[]
   >([]);
@@ -1722,31 +1719,6 @@ function ExercisePickerRow({
   );
 }
 
-function useElapsedSeconds(startedAt: string, serverNow: string) {
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-
-  useEffect(() => {
-    const clientAnchorMs = Date.now();
-    const serverAnchorMs = parseDateOrFallback(serverNow, clientAnchorMs);
-    const startedAtMs = parseDateOrFallback(startedAt, serverAnchorMs);
-    const updateElapsedSeconds = () => {
-      setElapsedSeconds(
-        getElapsedSeconds(startedAtMs, serverAnchorMs, clientAnchorMs),
-      );
-    };
-
-    updateElapsedSeconds();
-
-    const interval = window.setInterval(() => {
-      updateElapsedSeconds();
-    }, 250);
-
-    return () => window.clearInterval(interval);
-  }, [serverNow, startedAt]);
-
-  return elapsedSeconds;
-}
-
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
 
@@ -1783,26 +1755,6 @@ function isErrorBody(value: unknown): value is { error: string } {
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Something went wrong.";
-}
-
-function parseDateOrFallback(value: string, fallback: number) {
-  const parsed = Date.parse(value);
-
-  return Number.isNaN(parsed) ? fallback : parsed;
-}
-
-function getElapsedSeconds(
-  startedAtMs: number,
-  serverAnchorMs: number,
-  clientAnchorMs: number,
-) {
-  const estimatedServerNowMs =
-    serverAnchorMs + (Date.now() - clientAnchorMs);
-
-  return Math.max(
-    0,
-    Math.floor((estimatedServerNowMs - startedAtMs) / 1000),
-  );
 }
 
 function formatElapsedWords(totalSeconds: number) {
