@@ -19,7 +19,9 @@ type WorkoutHistoryCardViewModel = {
   id: string;
   title: string;
   completedAtLabel: string;
+  description: string | null;
   durationLabel: string;
+  hiddenExerciseCount: number;
   volumeLabel: string;
   setCountLabel: string;
   exercises: WorkoutExercisePreview[];
@@ -42,6 +44,7 @@ type CompletedWorkoutListItem = {
   duration_seconds: number;
   default_weight_unit: "lbs" | "kg";
   recorded_set_count: number;
+  exercise_count: number;
   volume: {
     value: number;
     unit: "lbs" | "kg";
@@ -338,28 +341,38 @@ function WorkoutHistoryCard({
   return (
     <Link
       href={`/profile/workouts/${workout.id}`}
-      className="block rounded-2xl border border-white/[0.08] bg-[#181818] p-4 text-left transition hover:border-white/15 hover:bg-[#1d1d1d] active:scale-[0.99]"
+      className="block rounded-[24px] border border-white/[0.08] bg-[#181818] px-5 py-5 text-left transition hover:border-white/15 hover:bg-[#1d1d1d] active:scale-[0.99]"
       aria-label={`Open ${workout.title}`}
     >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <h3 className="truncate text-base font-semibold text-white">
+          <h3 className="truncate text-xl font-semibold leading-tight text-white">
             {workout.title}
           </h3>
           <p className="mt-1 text-sm text-zinc-500">
             {workout.completedAtLabel}
           </p>
         </div>
-        <span className="shrink-0 rounded-full bg-white/[0.06] px-3 py-1 text-xs font-semibold text-zinc-300">
+        <span className="shrink-0 rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-200">
           {workout.setCountLabel}
         </span>
       </div>
-      <div className="mt-4 grid grid-cols-2 gap-2">
+
+      {workout.description ? (
+        <p className="mt-4 text-[15px] font-medium leading-6 text-zinc-200">
+          {workout.description}
+        </p>
+      ) : null}
+
+      <div className="mt-5 grid grid-cols-3 gap-3 border-y border-white/[0.07] py-4">
         <WorkoutMetric label="Duration" value={workout.durationLabel} />
         <WorkoutMetric label="Volume" value={workout.volumeLabel} />
+        {/* TODO: Implement workout records calculation in future release. */}
+        <WorkoutMetric muted label="Records" value="—" />
       </div>
+
       {workout.exercises.length > 0 ? (
-        <div className="mt-4 space-y-2">
+        <div className="mt-4 divide-y divide-white/[0.06]">
           {workout.exercises.map((exercise) => (
             <WorkoutExercisePreviewRow
               exercise={exercise}
@@ -368,15 +381,36 @@ function WorkoutHistoryCard({
           ))}
         </div>
       ) : null}
+
+      {workout.hiddenExerciseCount > 0 ? (
+        <p className="mt-4 text-center text-sm font-medium text-zinc-500">
+          See {workout.hiddenExerciseCount} more{" "}
+          {workout.hiddenExerciseCount === 1 ? "exercise" : "exercises"}
+        </p>
+      ) : null}
     </Link>
   );
 }
 
-function WorkoutMetric({ label, value }: { label: string; value: string }) {
+function WorkoutMetric({
+  label,
+  muted = false,
+  value,
+}: {
+  label: string;
+  muted?: boolean;
+  value: string;
+}) {
   return (
-    <div className="rounded-2xl bg-white/[0.035] px-3 py-3">
+    <div className="min-w-0">
       <p className="text-xs font-medium text-zinc-500">{label}</p>
-      <p className="mt-1 text-sm font-semibold text-zinc-100">{value}</p>
+      <p
+        className={`mt-1 truncate text-base font-semibold ${
+          muted ? "text-zinc-600" : "text-zinc-100"
+        }`}
+      >
+        {value}
+      </p>
     </div>
   );
 }
@@ -387,17 +421,16 @@ function WorkoutExercisePreviewRow({
   exercise: WorkoutExercisePreview;
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-2xl bg-white/[0.035] px-3 py-3">
+    <div className="flex items-center gap-3 py-3">
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-400/15 text-sm font-bold text-emerald-200">
         {exercise.thumbnailLabel.slice(0, 1).toUpperCase()}
       </div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold text-white">
-          {exercise.name}
+          {formatSetCount(exercise.setCount)} {exercise.name}
         </p>
         <p className="mt-0.5 truncate text-xs font-medium text-zinc-500">
-          {formatSetCount(exercise.setCount)}
-          {exercise.metadataLabel ? ` · ${exercise.metadataLabel}` : ""}
+          {exercise.metadataLabel || "Exercise"}
         </p>
       </div>
     </div>
@@ -411,7 +444,9 @@ function toWorkoutHistoryCardViewModel(
     id: workout.id,
     title: workout.name,
     completedAtLabel: formatDateTime(workout.ended_at),
+    description: normalizeOptionalText(workout.description),
     durationLabel: formatDuration(workout.duration_seconds),
+    hiddenExerciseCount: Math.max(0, workout.exercise_count - 3),
     volumeLabel: formatVolume(workout.volume.value, workout.volume.unit),
     setCountLabel: formatSetCount(workout.recorded_set_count),
     exercises: workout.exercises.map((exercise) => ({
@@ -425,6 +460,12 @@ function toWorkoutHistoryCardViewModel(
       thumbnailLabel: exercise.name,
     })),
   };
+}
+
+function normalizeOptionalText(value: string | null) {
+  const trimmedValue = value?.trim() ?? "";
+
+  return trimmedValue.length > 0 ? trimmedValue : null;
 }
 
 function compactLabels(labels: Array<string | null>) {

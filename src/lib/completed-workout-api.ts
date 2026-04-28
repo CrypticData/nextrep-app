@@ -70,6 +70,7 @@ export type CompletedWorkoutListItem = {
   duration_seconds: number;
   default_weight_unit: WeightUnit;
   recorded_set_count: number;
+  exercise_count: number;
   volume: {
     value: number;
     unit: WeightUnit;
@@ -177,6 +178,7 @@ function toCompletedWorkoutListItem(
     duration_seconds: getDurationSeconds(session.startedAt, endedAt),
     default_weight_unit: session.defaultWeightUnit,
     recorded_set_count: summary.recordedSetCount,
+    exercise_count: session.exercises.length,
     volume: summary.volume,
     exercises: session.exercises.slice(0, 3).map((exercise) => ({
       id: exercise.id,

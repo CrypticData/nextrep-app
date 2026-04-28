@@ -46,7 +46,7 @@ export function WorkoutMetadataHeader({
 }) {
   return (
     <div className="sticky top-0 z-30 -mx-5 -mt-px bg-[#101010]">
-      <div className="relative flex min-h-[64px] items-center justify-between border-b border-white/10 bg-[#181818] px-5 py-3">
+      <div className="relative flex min-h-[56px] items-center justify-between border-b border-white/10 bg-[#181818] px-5 py-2">
         <div className="z-10 flex min-w-[72px] items-center justify-start">
           {left}
         </div>
@@ -80,16 +80,16 @@ export function WorkoutMetadataSection({
   const [isDateTimeSheetOpen, setIsDateTimeSheetOpen] = useState(false);
 
   return (
-    <section className="-mx-5 border-b border-white/[0.07] bg-[#101010] px-5 pb-5 pt-4">
+    <section className="-mx-5 border-b border-white/[0.07] bg-[#101010] px-5 pb-5 pt-5">
       <input
         value={name}
         onChange={(event) => onNameChange(event.target.value)}
         maxLength={120}
-        className="w-full bg-transparent text-[2rem] font-semibold leading-tight tracking-normal text-white outline-none placeholder:text-zinc-700 focus:placeholder:text-zinc-600"
+        className="w-full bg-transparent text-[2.05rem] font-semibold leading-tight tracking-normal text-white outline-none placeholder:text-zinc-700 focus:placeholder:text-zinc-600"
         placeholder="Workout title"
       />
 
-      <div className="mt-4 grid min-h-[62px] grid-cols-[minmax(116px,1.35fr)_minmax(72px,0.85fr)_minmax(50px,0.55fr)] gap-2 border-b border-white/10 pb-4">
+      <div className="mt-5 grid min-h-[64px] grid-cols-[minmax(116px,1.35fr)_minmax(74px,0.85fr)_minmax(52px,0.55fr)] gap-3 border-b border-white/10 pb-5">
         <MetadataStatButton
           accent
           label="Duration"
@@ -103,24 +103,29 @@ export function WorkoutMetadataSection({
       <button
         type="button"
         onClick={() => setIsDateTimeSheetOpen(true)}
-        className="grid min-h-[58px] w-full grid-cols-[1fr_auto] items-center border-b border-white/10 text-left transition active:scale-[0.99]"
+        className="grid min-h-[64px] w-full grid-cols-[1fr_auto] items-center border-b border-white/10 text-left transition active:scale-[0.99]"
       >
         <span>
           <span className="block text-sm font-medium text-zinc-500">When</span>
-          <span className="mt-1 block text-base font-semibold text-white">
+          <span className="mt-1 block text-base font-semibold text-emerald-300">
             {formatWhenLabel(startedAtLocal)}
           </span>
         </span>
         <ChevronIcon className="h-5 w-5 text-zinc-500" />
       </button>
 
-      <textarea
-        value={description}
-        onChange={(event) => onDescriptionChange(event.target.value)}
-        rows={5}
-        className="mt-5 w-full resize-none rounded-[24px] border border-white/10 bg-[#181818] px-4 py-4 text-base font-medium leading-6 text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-[#1d1d1d]"
-        placeholder="Description"
-      />
+      <div className="mt-5">
+        <label className="text-sm font-medium text-zinc-500">
+          Description
+        </label>
+        <textarea
+          value={description}
+          onChange={(event) => onDescriptionChange(event.target.value)}
+          rows={5}
+          className="mt-2 w-full resize-none rounded-[22px] border border-white/10 bg-[#181818] px-4 py-4 text-base font-medium leading-6 text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-[#1d1d1d]"
+          placeholder="How did your workout go?"
+        />
+      </div>
 
       {isDurationSheetOpen ? (
         <DurationSheet
@@ -212,44 +217,30 @@ function DurationSheet({
   onDone: (value: DurationChange) => void;
   seconds: string;
 }) {
-  const [selectedHours, setSelectedHours] = useState(
-    clampWholeNumber(
-      hours,
-      0,
-      Math.floor(MAX_WORKOUT_DURATION_MINUTES / 60),
-    ),
-  );
+  const initialSelectedMinutes =
+    clampWholeNumber(hours, 0, Math.floor(MAX_WORKOUT_DURATION_MINUTES / 60)) *
+      60 +
+    clampWholeNumber(minutes, 0, 59);
   const [selectedMinutes, setSelectedMinutes] = useState(
-    clampWholeNumber(minutes, 0, 59),
+    Math.min(initialSelectedMinutes, MAX_WORKOUT_DURATION_MINUTES),
   );
   const secondsAdjustment = parseSignedInteger(seconds) ?? 0;
-  const maxHours = Math.floor(MAX_WORKOUT_DURATION_MINUTES / 60);
-  const maxMinutesForSelectedHour =
-    selectedHours === maxHours ? MAX_WORKOUT_DURATION_MINUTES % 60 : 59;
-  const minuteOptions = range(0, maxMinutesForSelectedHour);
-
-  function selectHours(hoursValue: number) {
-    setSelectedHours(hoursValue);
-
-    if (hoursValue === maxHours && selectedMinutes > maxMinutesForSelectedHour) {
-      setSelectedMinutes(maxMinutesForSelectedHour);
-    }
-  }
+  const durationOptions = range(0, MAX_WORKOUT_DURATION_MINUTES);
 
   function applyDuration() {
-    const selectedBaseSeconds = (selectedHours * 60 + selectedMinutes) * 60;
+    const selectedBaseSeconds = selectedMinutes * 60;
     const durationSeconds =
       selectedBaseSeconds >= MAX_WORKOUT_DURATION_SECONDS
         ? MAX_WORKOUT_DURATION_SECONDS
         : durationInputsToSeconds(
-            selectedHours,
-            selectedMinutes,
+            Math.floor(selectedMinutes / 60),
+            selectedMinutes % 60,
             secondsAdjustment,
           );
 
     onDone({
-      hours: selectedHours.toString(),
-      minutes: selectedMinutes.toString(),
+      hours: Math.floor(selectedMinutes / 60).toString(),
+      minutes: (selectedMinutes % 60).toString(),
       seconds: (durationSeconds - selectedBaseSeconds).toString(),
     });
   }
@@ -269,19 +260,12 @@ function DurationSheet({
         onClose={onClose}
         title="Duration"
       />
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-        <div className="grid grid-cols-2 gap-3">
+      <div className="px-5 py-5">
+        <div className="mx-auto max-w-[220px]">
           <WheelSelector
-            label="Hours"
-            onSelect={selectHours}
-            options={range(0, maxHours)}
-            selectedValue={selectedHours}
-          />
-          <WheelSelector
-            label="Minutes"
             onSelect={setSelectedMinutes}
-            options={minuteOptions}
-            pad
+            options={durationOptions}
+            renderOption={formatDurationOption}
             selectedValue={selectedMinutes}
           />
         </div>
@@ -324,13 +308,12 @@ function DateTimeSheet({
             type="button"
             onClick={() =>
               onDone(
-                [
+                toClampedLocalDateTimeValue(
                   selectedDate,
-                  "T",
-                  clampedHour.toString().padStart(2, "0"),
-                  ":",
-                  clampedMinute.toString().padStart(2, "0"),
-                ].join(""),
+                  clampedHour,
+                  clampedMinute,
+                  new Date(),
+                ),
               )
             }
             className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-bold text-white transition active:scale-95"
@@ -341,8 +324,8 @@ function DateTimeSheet({
         onClose={onClose}
         title="When"
       />
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-        <div className="grid grid-cols-[minmax(0,1.45fr)_minmax(64px,0.65fr)_minmax(64px,0.65fr)] gap-1">
+      <div className="px-5 pb-5 pt-4">
+        <div className="grid grid-cols-[minmax(0,1.45fr)_minmax(64px,0.65fr)_minmax(64px,0.65fr)] items-center gap-1">
           <DateWheelSelector
             ariaLabel="Date"
             onSelect={setSelectedDate}
@@ -375,6 +358,7 @@ function WheelSelector({
   onSelect,
   options,
   pad = false,
+  renderOption,
   selectedValue,
 }: {
   ariaLabel?: string;
@@ -382,6 +366,7 @@ function WheelSelector({
   onSelect: (value: number) => void;
   options: number[];
   pad?: boolean;
+  renderOption?: (value: number) => string;
   selectedValue: number;
 }) {
   const selectedIndex = Math.max(0, options.indexOf(selectedValue));
@@ -464,7 +449,11 @@ function WheelSelector({
               role="option"
               style={{ height: ROW_HEIGHT }}
             >
-              {pad ? option.toString().padStart(2, "0") : option}
+              {renderOption
+                ? renderOption(option)
+                : pad
+                  ? option.toString().padStart(2, "0")
+                  : option}
             </button>
           ))}
         </div>
@@ -608,18 +597,18 @@ function MetadataSheetHeader({
       <div className="flex justify-center px-5 py-3">
         <div className="h-1 w-10 rounded-full bg-white/20" />
       </div>
-      <div className="flex items-center border-b border-white/10 px-5 pb-4">
+      <div className="relative flex min-h-[48px] items-center justify-between border-b border-white/10 px-5 pb-4">
         <button
           type="button"
           onClick={onClose}
-          className="text-sm font-medium text-zinc-400"
+          className="z-10 min-w-[72px] text-left text-sm font-medium text-zinc-400"
         >
           Cancel
         </button>
-        <h2 className="min-w-0 flex-1 truncate px-3 text-center text-base font-semibold text-white">
+        <h2 className="pointer-events-none absolute left-1/2 max-w-[52%] -translate-x-1/2 truncate text-center text-base font-semibold text-white">
           {title}
         </h2>
-        {action}
+        <div className="z-10 flex min-w-[72px] justify-end">{action}</div>
       </div>
     </>
   );
@@ -659,7 +648,6 @@ function formatWhenLabel(value: string) {
     hour: "numeric",
     minute: "2-digit",
     month: "short",
-    weekday: "short",
     year: "numeric",
   });
 }
@@ -717,6 +705,42 @@ function toDateOptionValue(date: Date) {
     "-",
     date.getDate().toString().padStart(2, "0"),
   ].join("");
+}
+
+function toClampedLocalDateTimeValue(
+  dateValue: string,
+  hour: number,
+  minute: number,
+  maxDate: Date,
+) {
+  const candidate = new Date(
+    `${dateValue}T${hour.toString().padStart(2, "0")}:${minute
+      .toString()
+      .padStart(2, "0")}`,
+  );
+  const resolvedDate =
+    Number.isNaN(candidate.getTime()) || candidate.getTime() > maxDate.getTime()
+      ? maxDate
+      : candidate;
+
+  return [
+    toDateOptionValue(resolvedDate),
+    "T",
+    resolvedDate.getHours().toString().padStart(2, "0"),
+    ":",
+    resolvedDate.getMinutes().toString().padStart(2, "0"),
+  ].join("");
+}
+
+function formatDurationOption(totalMinutes: number) {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours === 0) {
+    return `${minutes}min`;
+  }
+
+  return `${hours}h ${minutes}min`;
 }
 
 function getWheelFadeClassName(index: number, selectedIndex: number) {

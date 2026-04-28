@@ -456,31 +456,44 @@ export function EditWorkoutApp({ workoutId }: { workoutId: string }) {
             volumeLabel={formatVolumeSummary(draft.volumeValue, draft.volumeUnit)}
           />
 
-          {draft.exercises.length === 0 ? (
-            <EmptyExerciseState onAddExercise={openExercisePicker} />
-          ) : (
-            <div className="space-y-3">
-              {draft.exercises.map((exercise) => (
-                <EditableExerciseCard
-                  defaultWeightUnit={draft.defaultWeightUnit}
-                  exercise={exercise}
-                  key={exercise.clientId}
-                  onAddSet={() => handleAddSet(exercise.clientId)}
-                  onDeleteSet={(set) =>
-                    setDeleteSetTarget({
-                      exerciseClientId: exercise.clientId,
-                      setClientId: set.clientId,
-                      label: formatSetLabel(set),
-                    })
-                  }
-                  onRemoveExercise={() => setRemoveExerciseId(exercise.clientId)}
-                  onUpdate={(updater) =>
-                    handleUpdateExercise(exercise.clientId, updater)
-                  }
-                />
-              ))}
+          <section className="border-t border-white/[0.07] pt-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-zinc-500">
+                Exercises
+              </h2>
+              <span className="text-xs font-semibold text-zinc-600">
+                {draft.exercises.length}
+              </span>
             </div>
-          )}
+
+            {draft.exercises.length === 0 ? (
+              <EmptyExerciseState onAddExercise={openExercisePicker} />
+            ) : (
+              <div className="space-y-4">
+                {draft.exercises.map((exercise) => (
+                  <EditableExerciseCard
+                    defaultWeightUnit={draft.defaultWeightUnit}
+                    exercise={exercise}
+                    key={exercise.clientId}
+                    onAddSet={() => handleAddSet(exercise.clientId)}
+                    onDeleteSet={(set) =>
+                      setDeleteSetTarget({
+                        exerciseClientId: exercise.clientId,
+                        setClientId: set.clientId,
+                        label: formatSetLabel(set),
+                      })
+                    }
+                    onRemoveExercise={() =>
+                      setRemoveExerciseId(exercise.clientId)
+                    }
+                    onUpdate={(updater) =>
+                      handleUpdateExercise(exercise.clientId, updater)
+                    }
+                  />
+                ))}
+              </div>
+            )}
+          </section>
 
           <button
             type="button"
@@ -557,8 +570,8 @@ function EditableExerciseCard({
   ).length;
 
   return (
-    <section className="-mx-5 border-y border-white/[0.07] bg-[#101010] py-4">
-      <div className="flex items-start justify-between gap-3 px-5">
+    <section className="-mx-1 rounded-[24px] border border-white/[0.08] bg-[#141414] py-4">
+      <div className="flex items-start justify-between gap-3 px-4">
         <div className="min-w-0">
           <h2 className="truncate text-lg font-semibold text-white">
             {exercise.exerciseNameSnapshot}
@@ -585,7 +598,7 @@ function EditableExerciseCard({
         </div>
       </div>
 
-      <div className="mt-4 px-5">
+      <div className="mt-4 px-4">
         <textarea
           value={exercise.notes}
           onChange={(event) =>
@@ -595,13 +608,13 @@ function EditableExerciseCard({
             }))
           }
           rows={2}
-          className="w-full resize-none rounded-2xl border border-white/10 bg-[#181818] px-4 py-3 text-sm font-medium leading-5 text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-300/40"
+          className="w-full resize-none rounded-2xl border border-white/10 bg-[#101010] px-4 py-3 text-sm font-medium leading-5 text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-300/40"
           placeholder="Exercise notes"
         />
       </div>
 
       <div className="mt-4">
-        <div className="grid grid-cols-[42px_minmax(68px,1fr)_46px_56px_38px] items-center border-y border-white/[0.06] bg-[#101010] px-2 py-2.5 text-[10px] font-bold uppercase tracking-[0.09em] text-zinc-500">
+        <div className="grid grid-cols-[42px_minmax(68px,1fr)_46px_56px_38px] items-center border-y border-white/[0.06] bg-[#101010] px-3 py-2.5 text-[10px] font-bold uppercase tracking-[0.09em] text-zinc-500">
           <span>Set</span>
           <span className="text-center">
             {getWeightColumnLabel(
@@ -643,7 +656,7 @@ function EditableExerciseCard({
         )}
       </div>
 
-      <div className="px-5 pt-4">
+      <div className="px-4 pt-4">
         <button
           type="button"
           onClick={onAddSet}
