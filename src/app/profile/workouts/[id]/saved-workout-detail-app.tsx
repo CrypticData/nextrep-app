@@ -1,8 +1,9 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AppShell } from "@/app/app-shell";
+import { ConfirmSheet } from "@/app/confirm-sheet";
 
 type ExerciseType =
   | "weight_reps"
@@ -55,10 +56,60 @@ type CompletedWorkoutSet = {
 type LoadState = "loading" | "ready" | "error";
 
 export function SavedWorkoutDetailApp({ workoutId }: { workoutId: string }) {
+  const router = useRouter();
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [workout, setWorkout] = useState<CompletedWorkoutDetail | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [reloadRequest, setReloadRequest] = useState(0);
+  const [isActionsOpen, setIsActionsOpen] = useState(false);
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  function handleEditWorkout() {
+    setIsActionsOpen(false);
+    router.push(`/profile/workouts/${workoutId}/edit`);
+  }
+
+  function handleRequestDelete() {
+    setIsActionsOpen(false);
+    setDeleteError(null);
+    setIsConfirmDeleteOpen(true);
+  }
+
+  async function handleDeleteWorkout() {
+    if (isDeleting) {
+      return;
+    }
+
+    setIsDeleting(true);
+    setDeleteError(null);
+
+    try {
+      const response = await fetch(`/api/workout-sessions/${workoutId}`, {
+        method: "DELETE",
+      });
+
+      if (response.status === 204) {
+        router.push("/profile");
+        return;
+      }
+
+      throw new Error(await readErrorResponse(response));
+    } catch (error) {
+      setDeleteError(getErrorMessage(error));
+      setIsDeleting(false);
+    }
+  }
+
+  function handleCancelDelete() {
+    if (isDeleting) {
+      return;
+    }
+
+    setDeleteError(null);
+    setIsConfirmDeleteOpen(false);
+  }
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -98,13 +149,14 @@ export function SavedWorkoutDetailApp({ workoutId }: { workoutId: string }) {
   return (
     <AppShell
       action={
-        <Link
-          href={`/profile/workouts/${workoutId}/edit`}
+        <button
+          type="button"
+          onClick={() => setIsActionsOpen(true)}
           className="flex h-11 w-11 items-center justify-center rounded-full bg-white/[0.06] text-zinc-200 transition active:scale-95"
-          aria-label="Edit workout"
+          aria-label="Workout actions"
         >
           <EditIcon className="h-5 w-5" />
-        </Link>
+        </button>
       }
       backHref="/profile"
       mainClassName="px-5 pb-24 pt-4"
@@ -127,7 +179,72 @@ export function SavedWorkoutDetailApp({ workoutId }: { workoutId: string }) {
       {loadState === "ready" && workout ? (
         <WorkoutDetail workout={workout} />
       ) : null}
+
+      {isActionsOpen ? (
+        <WorkoutActionsSheet
+          onCancel={() => setIsActionsOpen(false)}
+          onDelete={handleRequestDelete}
+          onEdit={handleEditWorkout}
+        />
+      ) : null}
+
+      {isConfirmDeleteOpen ? (
+        <ConfirmSheet
+          confirmLabel="Delete"
+          confirmingLabel="Deleting"
+          description="This permanently removes the workout, including all logged exercises and sets. This can't be undone."
+          error={deleteError}
+          isConfirming={isDeleting}
+          onCancel={handleCancelDelete}
+          onConfirm={() => void handleDeleteWorkout()}
+          title="Delete this workout?"
+        />
+      ) : null}
     </AppShell>
+  );
+}
+
+function WorkoutActionsSheet({
+  onCancel,
+  onDelete,
+  onEdit,
+}: {
+  onCancel: () => void;
+  onDelete: () => void;
+  onEdit: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60">
+      <button
+        type="button"
+        aria-label="Close workout actions"
+        className="absolute inset-0 cursor-default"
+        onClick={onCancel}
+      />
+      <section className="confirm-sheet-in relative w-full max-w-md rounded-t-3xl border border-white/10 bg-[#141414] px-5 pb-5 shadow-2xl shadow-black">
+        <div className="flex justify-center py-3">
+          <div className="h-1 w-9 rounded-full bg-white/15" />
+        </div>
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={onEdit}
+            className="flex h-14 w-full items-center gap-3 rounded-2xl bg-white/[0.06] px-4 text-left text-base font-bold text-white transition active:scale-[0.99]"
+          >
+            <EditIcon className="h-5 w-5 text-zinc-300" />
+            <span>Edit workout</span>
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            className="flex h-14 w-full items-center gap-3 rounded-2xl bg-red-500/10 px-4 text-left text-base font-bold text-red-300 ring-1 ring-red-500/20 transition active:scale-[0.99]"
+          >
+            <XIcon className="h-5 w-5" />
+            <span>Delete workout</span>
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -434,6 +551,19 @@ function EditIcon({ className }: IconProps) {
       />
       <path
         d="m13.5 6.5 4 4"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+}
+
+function XIcon({ className }: IconProps) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" aria-hidden>
+      <path
+        d="M6 6l12 12M18 6 6 18"
         stroke="currentColor"
         strokeLinecap="round"
         strokeWidth="2"

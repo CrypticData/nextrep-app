@@ -163,6 +163,26 @@ export async function getCompletedWorkoutDetail(id: string) {
   };
 }
 
+export async function deleteCompletedWorkout(id: string): Promise<
+  | { kind: "invalid_id" }
+  | { kind: "not_found" }
+  | { kind: "ok" }
+> {
+  if (!isUuid(id)) {
+    return { kind: "invalid_id" };
+  }
+
+  const result = await prisma.workoutSession.deleteMany({
+    where: {
+      id,
+      status: "completed",
+      endedAt: { not: null },
+    },
+  });
+
+  return result.count > 0 ? { kind: "ok" } : { kind: "not_found" };
+}
+
 function toCompletedWorkoutListItem(
   session: CompletedWorkoutSession,
 ): CompletedWorkoutListItem {
