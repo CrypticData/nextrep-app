@@ -1,8 +1,26 @@
 "use client";
 
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import type { DragEndEvent } from "@dnd-kit/core";
+import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS as DndCSS } from "@dnd-kit/utilities";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useActiveWorkout, useElapsedSeconds } from "./active-workout-context";
 import type { ActiveWorkoutSession } from "./active-workout-context";
 import { AppShell } from "./app-shell";
@@ -99,6 +117,13 @@ type SaveWorkoutDraft = {
     volumeValue: number;
     volumeUnit: "lbs" | "kg";
   };
+};
+
+type SortableHandleProps = {
+  attributes: ReturnType<typeof useSortable>["attributes"];
+  isDragging: boolean;
+  listeners: ReturnType<typeof useSortable>["listeners"];
+  setActivatorNodeRef: ReturnType<typeof useSortable>["setActivatorNodeRef"];
 };
 
 export function WorkoutApp() {
@@ -415,6 +440,10 @@ function LiveWorkout({
     Set<string>
   >(() => new Set());
   const [setEditError, setSetEditError] = useState<string | null>(null);
+  const [reorderError, setReorderError] = useState<string | null>(null);
+  const [failedExerciseOrderIds, setFailedExerciseOrderIds] = useState<
+    string[] | null
+  >(null);
   const [finishError, setFinishError] = useState<string | null>(null);
   const [isFinishing, setIsFinishing] = useState(false);
   const [isInvalidRowsSheetOpen, setIsInvalidRowsSheetOpen] = useState(false);
@@ -425,6 +454,19 @@ function LiveWorkout({
   const latestExerciseNotesRef = useRef<Map<string, string>>(new Map());
   const noteSavePromisesRef = useRef<Map<string, Promise<void>>>(new Map());
   const noteSaveTimersRef = useRef<Map<string, number>>(new Map());
+  const exerciseOrderRequestRef = useRef(0);
+  const exerciseOrderIds = useMemo(
+    () => workoutExercises.map((workoutExercise) => workoutExercise.id),
+    [workoutExercises],
+  );
+  const exerciseOrderSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
 
   const loadWorkoutExercises = useCallback(async () => {
     setIsLoadingWorkoutExercises(true);
@@ -761,6 +803,74 @@ function LiveWorkout({
     }
   }
 
+  async function saveWorkoutExerciseOrder(orderedIds: string[]) {
+    const previousOrderIds = exerciseOrderIds;
+    const requestId = exerciseOrderRequestRef.current + 1;
+
+    exerciseOrderRequestRef.current = requestId;
+    setReorderError(null);
+    setFailedExerciseOrderIds(null);
+    setWorkoutExercises((currentExercises) =>
+      applyWorkoutExerciseOrder(currentExercises, orderedIds),
+    );
+
+    try {
+      const savedWorkoutExercises = await fetchJson<WorkoutSessionExercise[]>(
+        `/api/workout-sessions/${session.id}/exercise-order`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ workout_exercise_ids: orderedIds }),
+        },
+      );
+
+      if (exerciseOrderRequestRef.current !== requestId) {
+        return;
+      }
+
+      const savedOrderIds = sortWorkoutExercises(savedWorkoutExercises).map(
+        (workoutExercise) => workoutExercise.id,
+      );
+
+      setWorkoutExercises((currentExercises) =>
+        applyWorkoutExerciseOrder(currentExercises, savedOrderIds),
+      );
+    } catch (error) {
+      if (exerciseOrderRequestRef.current !== requestId) {
+        return;
+      }
+
+      setWorkoutExercises((currentExercises) =>
+        applyWorkoutExerciseOrder(currentExercises, previousOrderIds),
+      );
+      setFailedExerciseOrderIds(orderedIds);
+      setReorderError(getErrorMessage(error));
+    }
+  }
+
+  function handleWorkoutExerciseDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+
+    if (!over || active.id === over.id) {
+      return;
+    }
+
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    const activeIndex = exerciseOrderIds.indexOf(activeId);
+    const overIndex = exerciseOrderIds.indexOf(overId);
+
+    if (activeIndex === -1 || overIndex === -1) {
+      return;
+    }
+
+    void saveWorkoutExerciseOrder(
+      arrayMove(exerciseOrderIds, activeIndex, overIndex),
+    );
+  }
+
   async function handleDiscardInvalidRowsAndFinish() {
     setIsDiscardingInvalidRows(true);
     setFinishError(null);
@@ -903,40 +1013,71 @@ function LiveWorkout({
         workoutExercises.length > 0 ? (
           <div className="space-y-3">
             {setEditError ? <SetEditError message={setEditError} /> : null}
-            {workoutExercises.map((workoutExercise) => (
-              <WorkoutExerciseCard
-                key={workoutExercise.id}
-                isAddingSet={addingSetExerciseIds.has(workoutExercise.id)}
-                isSetDeleting={(setId) => deletingSetIds.has(setId)}
-                isSetSaving={(setId) => savingSetIds.has(setId)}
-                isUnitSaving={savingUnitExerciseIds.has(workoutExercise.id)}
-                isRemoving={removingWorkoutExerciseIds.has(workoutExercise.id)}
-                onAddSet={() => void handleAddSet(workoutExercise.id)}
-                onDeleteSet={(setId) =>
-                  void handleDeleteSet(workoutExercise.id, setId)
-                }
-                onRemoveExercise={() =>
-                  void handleRemoveWorkoutExercise(workoutExercise)
-                }
-                onUpdateExerciseUnit={(weightUnit) =>
-                  handleUpdateWorkoutExerciseUnit(
-                    workoutExercise.id,
-                    weightUnit,
-                  )
-                }
-                onUpdateNotes={(notes) =>
-                  saveWorkoutExerciseNotes(workoutExercise.id, notes)
-                }
-                onNotesChange={(notes) =>
-                  handleChangeWorkoutExerciseNotes(workoutExercise.id, notes)
-                }
-                onUpdateSet={(setId, patch) =>
-                  handleUpdateSet(workoutExercise.id, setId, patch)
-                }
-                sessionDefaultWeightUnit={session.default_weight_unit}
-                workoutExercise={workoutExercise}
+            {reorderError ? (
+              <ExerciseOrderError
+                message={reorderError}
+                onRetry={() => {
+                  if (failedExerciseOrderIds) {
+                    void saveWorkoutExerciseOrder(failedExerciseOrderIds);
+                  }
+                }}
               />
-            ))}
+            ) : null}
+            <DndContext
+              collisionDetection={closestCenter}
+              modifiers={[restrictToVerticalAxis]}
+              onDragEnd={handleWorkoutExerciseDragEnd}
+              sensors={exerciseOrderSensors}
+            >
+              <SortableContext
+                items={exerciseOrderIds}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="space-y-3">
+                  {workoutExercises.map((workoutExercise) => (
+                    <SortableWorkoutExerciseCard
+                      key={workoutExercise.id}
+                      isAddingSet={addingSetExerciseIds.has(workoutExercise.id)}
+                      isSetDeleting={(setId) => deletingSetIds.has(setId)}
+                      isSetSaving={(setId) => savingSetIds.has(setId)}
+                      isUnitSaving={savingUnitExerciseIds.has(
+                        workoutExercise.id,
+                      )}
+                      isRemoving={removingWorkoutExerciseIds.has(
+                        workoutExercise.id,
+                      )}
+                      onAddSet={() => void handleAddSet(workoutExercise.id)}
+                      onDeleteSet={(setId) =>
+                        void handleDeleteSet(workoutExercise.id, setId)
+                      }
+                      onRemoveExercise={() =>
+                        void handleRemoveWorkoutExercise(workoutExercise)
+                      }
+                      onUpdateExerciseUnit={(weightUnit) =>
+                        handleUpdateWorkoutExerciseUnit(
+                          workoutExercise.id,
+                          weightUnit,
+                        )
+                      }
+                      onUpdateNotes={(notes) =>
+                        saveWorkoutExerciseNotes(workoutExercise.id, notes)
+                      }
+                      onNotesChange={(notes) =>
+                        handleChangeWorkoutExerciseNotes(
+                          workoutExercise.id,
+                          notes,
+                        )
+                      }
+                      onUpdateSet={(setId, patch) =>
+                        handleUpdateSet(workoutExercise.id, setId, patch)
+                      }
+                      sessionDefaultWeightUnit={session.default_weight_unit}
+                      workoutExercise={workoutExercise}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
           </div>
         ) : null}
 
@@ -1185,6 +1326,27 @@ function SetEditError({ message }: { message: string }) {
   );
 }
 
+function ExerciseOrderError({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onRetry}
+      className="w-full rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-left text-sm font-semibold leading-6 text-amber-100 transition active:scale-[0.99]"
+    >
+      Couldn&apos;t save order. Tap to retry.
+      <span className="block text-xs font-medium text-amber-100/70">
+        {message}
+      </span>
+    </button>
+  );
+}
+
 function FinishError({ message }: { message: string }) {
   return (
     <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm font-semibold leading-6 text-amber-100">
@@ -1300,22 +1462,7 @@ function EmptyWorkoutExerciseState({
   );
 }
 
-function WorkoutExerciseCard({
-  isAddingSet,
-  isSetDeleting,
-  isSetSaving,
-  isRemoving,
-  isUnitSaving,
-  onAddSet,
-  onDeleteSet,
-  onRemoveExercise,
-  onNotesChange,
-  onUpdateExerciseUnit,
-  onUpdateNotes,
-  onUpdateSet,
-  sessionDefaultWeightUnit,
-  workoutExercise,
-}: {
+type WorkoutExerciseCardProps = {
   isAddingSet: boolean;
   isSetDeleting: (setId: string) => boolean;
   isSetSaving: (setId: string) => boolean;
@@ -1330,6 +1477,89 @@ function WorkoutExerciseCard({
   onUpdateSet: (setId: string, patch: WorkoutSetPatch) => Promise<void>;
   sessionDefaultWeightUnit: "lbs" | "kg";
   workoutExercise: WorkoutSessionExercise;
+};
+
+function SortableWorkoutExerciseCard(props: WorkoutExerciseCardProps) {
+  const {
+    attributes,
+    isDragging,
+    listeners,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    transition,
+  } = useSortable({ id: props.workoutExercise.id });
+  const style: CSSProperties = {
+    transform: DndCSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : undefined,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={
+        isDragging
+          ? "relative scale-[1.02] shadow-2xl shadow-black/50"
+          : "relative"
+      }
+    >
+      <WorkoutExerciseCard
+        {...props}
+        dragHandleProps={{
+          attributes,
+          isDragging,
+          listeners,
+          setActivatorNodeRef,
+        }}
+      />
+    </div>
+  );
+}
+
+function ExerciseDragHandle({
+  attributes,
+  isDragging,
+  listeners,
+  setActivatorNodeRef,
+}: SortableHandleProps) {
+  return (
+    <button
+      ref={setActivatorNodeRef}
+      type="button"
+      className={`flex h-11 w-9 shrink-0 touch-none items-center justify-center rounded-xl text-zinc-500 transition active:scale-95 ${
+        isDragging
+          ? "cursor-grabbing bg-white/[0.08] text-zinc-200"
+          : "cursor-grab hover:bg-white/[0.05] hover:text-zinc-300"
+      }`}
+      {...attributes}
+      {...listeners}
+      aria-label="Reorder exercise"
+    >
+      <GripIcon className="h-5 w-5" />
+    </button>
+  );
+}
+
+function WorkoutExerciseCard({
+  dragHandleProps,
+  isAddingSet,
+  isSetDeleting,
+  isSetSaving,
+  isRemoving,
+  isUnitSaving,
+  onAddSet,
+  onDeleteSet,
+  onRemoveExercise,
+  onNotesChange,
+  onUpdateExerciseUnit,
+  onUpdateNotes,
+  onUpdateSet,
+  sessionDefaultWeightUnit,
+  workoutExercise,
+}: WorkoutExerciseCardProps & {
+  dragHandleProps: SortableHandleProps;
 }) {
   const exerciseType = workoutExercise.exercise_type ?? "weight_reps";
   const [isUnitSheetOpen, setIsUnitSheetOpen] = useState(false);
@@ -1352,8 +1582,9 @@ function WorkoutExerciseCard({
 
   return (
     <section className="-mx-5 border-y border-white/[0.07] bg-[#101010] py-4">
-      <div className="flex items-start justify-between gap-3 px-5">
-        <div className="min-w-0">
+      <div className="flex items-start gap-2 px-5">
+        <ExerciseDragHandle {...dragHandleProps} />
+        <div className="min-w-0 flex-1">
           <h2 className="truncate text-lg font-semibold text-white">
             {workoutExercise.exercise_name_snapshot}
           </h2>
@@ -2213,6 +2444,28 @@ function sortWorkoutExercises(exercises: WorkoutSessionExercise[]) {
   });
 }
 
+function applyWorkoutExerciseOrder(
+  exercises: WorkoutSessionExercise[],
+  orderedIds: string[],
+) {
+  if (exercises.length !== orderedIds.length) {
+    return exercises;
+  }
+
+  const exercisesById = new Map(
+    exercises.map((exercise) => [exercise.id, exercise]),
+  );
+
+  if (orderedIds.some((id) => !exercisesById.has(id))) {
+    return exercises;
+  }
+
+  return orderedIds.map((id, orderIndex) => ({
+    ...exercisesById.get(id)!,
+    order_index: orderIndex,
+  }));
+}
+
 function sortWorkoutSets(sets: WorkoutSet[]) {
   return [...sets].sort((first, second) => {
     return first.row_index - second.row_index;
@@ -2440,6 +2693,24 @@ function MoreIcon({ className }: IconProps) {
       <circle cx="12" cy="5" r="2" fill="currentColor" />
       <circle cx="12" cy="12" r="2" fill="currentColor" />
       <circle cx="12" cy="19" r="2" fill="currentColor" />
+    </svg>
+  );
+}
+
+function GripIcon({ className }: IconProps) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path
+        d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="3"
+      />
     </svg>
   );
 }

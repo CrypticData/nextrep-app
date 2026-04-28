@@ -1,8 +1,26 @@
 "use client";
 
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import type { DragEndEvent } from "@dnd-kit/core";
+import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS as DndCSS } from "@dnd-kit/utilities";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { AppShell } from "@/app/app-shell";
 import { ConfirmSheet } from "@/app/confirm-sheet";
 import {
@@ -135,6 +153,13 @@ type DeleteSetTarget = {
   label: string;
 };
 
+type SortableHandleProps = {
+  attributes: ReturnType<typeof useSortable>["attributes"];
+  isDragging: boolean;
+  listeners: ReturnType<typeof useSortable>["listeners"];
+  setActivatorNodeRef: ReturnType<typeof useSortable>["setActivatorNodeRef"];
+};
+
 let nextDraftId = 0;
 
 export function EditWorkoutApp({ workoutId }: { workoutId: string }) {
@@ -219,6 +244,18 @@ export function EditWorkoutApp({ workoutId }: { workoutId: string }) {
   const summary = useMemo(() => {
     return draft ? getDraftSummary(draft) : null;
   }, [draft]);
+  const draftExerciseIds = useMemo(
+    () => draft?.exercises.map((exercise) => exercise.clientId) ?? [],
+    [draft],
+  );
+  const exerciseOrderSensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
 
   function openExercisePicker() {
     setIsPickerOpen(true);
@@ -328,6 +365,51 @@ export function EditWorkoutApp({ workoutId }: { workoutId: string }) {
       };
     });
     setRemoveExerciseId(null);
+  }
+
+  function handleExerciseDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+
+    if (!over || active.id === over.id) {
+      return;
+    }
+
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    const activeIndex = draftExerciseIds.indexOf(activeId);
+    const overIndex = draftExerciseIds.indexOf(overId);
+
+    if (activeIndex === -1 || overIndex === -1) {
+      return;
+    }
+
+    setSaveError(null);
+    setDraft((currentDraft) => {
+      if (!currentDraft) {
+        return currentDraft;
+      }
+
+      const currentExerciseIds = currentDraft.exercises.map(
+        (exercise) => exercise.clientId,
+      );
+      const currentActiveIndex = currentExerciseIds.indexOf(activeId);
+      const currentOverIndex = currentExerciseIds.indexOf(overId);
+
+      if (currentActiveIndex === -1 || currentOverIndex === -1) {
+        return currentDraft;
+      }
+
+      return {
+        ...currentDraft,
+        exercises: renumberExercises(
+          arrayMove(
+            currentDraft.exercises,
+            currentActiveIndex,
+            currentOverIndex,
+          ),
+        ),
+      };
+    });
   }
 
   async function handleSave() {
@@ -469,29 +551,41 @@ export function EditWorkoutApp({ workoutId }: { workoutId: string }) {
             {draft.exercises.length === 0 ? (
               <EmptyExerciseState onAddExercise={openExercisePicker} />
             ) : (
-              <div className="space-y-4">
-                {draft.exercises.map((exercise) => (
-                  <EditableExerciseCard
-                    defaultWeightUnit={draft.defaultWeightUnit}
-                    exercise={exercise}
-                    key={exercise.clientId}
-                    onAddSet={() => handleAddSet(exercise.clientId)}
-                    onDeleteSet={(set) =>
-                      setDeleteSetTarget({
-                        exerciseClientId: exercise.clientId,
-                        setClientId: set.clientId,
-                        label: formatSetLabel(set),
-                      })
-                    }
-                    onRemoveExercise={() =>
-                      setRemoveExerciseId(exercise.clientId)
-                    }
-                    onUpdate={(updater) =>
-                      handleUpdateExercise(exercise.clientId, updater)
-                    }
-                  />
-                ))}
-              </div>
+              <DndContext
+                collisionDetection={closestCenter}
+                modifiers={[restrictToVerticalAxis]}
+                onDragEnd={handleExerciseDragEnd}
+                sensors={exerciseOrderSensors}
+              >
+                <SortableContext
+                  items={draftExerciseIds}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="space-y-4">
+                    {draft.exercises.map((exercise) => (
+                      <SortableEditableExerciseCard
+                        defaultWeightUnit={draft.defaultWeightUnit}
+                        exercise={exercise}
+                        key={exercise.clientId}
+                        onAddSet={() => handleAddSet(exercise.clientId)}
+                        onDeleteSet={(set) =>
+                          setDeleteSetTarget({
+                            exerciseClientId: exercise.clientId,
+                            setClientId: set.clientId,
+                            label: formatSetLabel(set),
+                          })
+                        }
+                        onRemoveExercise={() =>
+                          setRemoveExerciseId(exercise.clientId)
+                        }
+                        onUpdate={(updater) =>
+                          handleUpdateExercise(exercise.clientId, updater)
+                        }
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
             )}
           </section>
 
@@ -548,14 +642,7 @@ export function EditWorkoutApp({ workoutId }: { workoutId: string }) {
   );
 }
 
-function EditableExerciseCard({
-  defaultWeightUnit,
-  exercise,
-  onAddSet,
-  onDeleteSet,
-  onRemoveExercise,
-  onUpdate,
-}: {
+type EditableExerciseCardProps = {
   defaultWeightUnit: WeightUnit;
   exercise: DraftWorkoutExercise;
   onAddSet: () => void;
@@ -564,11 +651,87 @@ function EditableExerciseCard({
   onUpdate: (
     updater: (exercise: DraftWorkoutExercise) => DraftWorkoutExercise,
   ) => void;
+};
+
+function SortableEditableExerciseCard(props: EditableExerciseCardProps) {
+  const {
+    attributes,
+    isDragging,
+    listeners,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    transition,
+  } = useSortable({ id: props.exercise.clientId });
+  const style: CSSProperties = {
+    transform: DndCSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : undefined,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={
+        isDragging
+          ? "relative scale-[1.02] shadow-2xl shadow-black/50"
+          : "relative"
+      }
+    >
+      <EditableExerciseCard
+        {...props}
+        dragHandleProps={{
+          attributes,
+          isDragging,
+          listeners,
+          setActivatorNodeRef,
+        }}
+      />
+    </div>
+  );
+}
+
+function ExerciseDragHandle({
+  attributes,
+  isDragging,
+  listeners,
+  setActivatorNodeRef,
+}: SortableHandleProps) {
+  return (
+    <button
+      ref={setActivatorNodeRef}
+      type="button"
+      className={`flex h-11 w-9 shrink-0 touch-none items-center justify-center rounded-xl text-zinc-500 transition active:scale-95 ${
+        isDragging
+          ? "cursor-grabbing bg-white/[0.08] text-zinc-200"
+          : "cursor-grab hover:bg-white/[0.05] hover:text-zinc-300"
+      }`}
+      {...attributes}
+      {...listeners}
+      aria-label="Reorder exercise"
+    >
+      <GripIcon className="h-5 w-5" />
+    </button>
+  );
+}
+
+function EditableExerciseCard({
+  dragHandleProps,
+  defaultWeightUnit,
+  exercise,
+  onAddSet,
+  onDeleteSet,
+  onRemoveExercise,
+  onUpdate,
+}: EditableExerciseCardProps & {
+  dragHandleProps: SortableHandleProps;
 }) {
   return (
     <section className="-mx-1 rounded-[24px] border border-white/[0.08] bg-[#141414] py-4">
-      <div className="flex items-start justify-between gap-3 px-4">
-        <div className="min-w-0">
+      <div className="flex items-start gap-2 px-4">
+        <ExerciseDragHandle {...dragHandleProps} />
+        <div className="min-w-0 flex-1">
           <h2 className="truncate text-lg font-semibold text-white">
             {exercise.exerciseNameSnapshot}
           </h2>
@@ -1823,6 +1986,19 @@ function TrashIcon({ className }: IconProps) {
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeWidth="2"
+      />
+    </svg>
+  );
+}
+
+function GripIcon({ className }: IconProps) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" aria-hidden>
+      <path
+        d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="3"
       />
     </svg>
   );

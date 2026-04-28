@@ -137,6 +137,55 @@ export function parseWorkoutExerciseNotesBody(value: unknown) {
   return { ok: true as const, notes: trimmedNotes || null };
 }
 
+export function parseWorkoutExerciseOrderBody(value: unknown) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return {
+      ok: false as const,
+      message: "Request body must be an object.",
+    };
+  }
+
+  const workoutExerciseIds = (value as Record<string, unknown>)
+    .workout_exercise_ids;
+
+  if (!Array.isArray(workoutExerciseIds)) {
+    return {
+      ok: false as const,
+      message: "workout_exercise_ids must be an array.",
+    };
+  }
+
+  if (workoutExerciseIds.length === 0) {
+    return {
+      ok: false as const,
+      message: "workout_exercise_ids must include at least one id.",
+    };
+  }
+
+  if (
+    !workoutExerciseIds.every(
+      (workoutExerciseId) =>
+        typeof workoutExerciseId === "string" && isUuid(workoutExerciseId),
+    )
+  ) {
+    return {
+      ok: false as const,
+      message: "Each workout_exercise_ids item must be a valid UUID.",
+    };
+  }
+
+  const uniqueIds = new Set(workoutExerciseIds);
+
+  if (uniqueIds.size !== workoutExerciseIds.length) {
+    return {
+      ok: false as const,
+      message: "workout_exercise_ids must not contain duplicate ids.",
+    };
+  }
+
+  return { ok: true as const, workoutExerciseIds };
+}
+
 export function toWorkoutSessionExerciseResponse(
   workoutExercise: SelectedWorkoutSessionExercise,
 ): WorkoutSessionExerciseResponse {
@@ -398,6 +447,90 @@ export async function removeExerciseFromActiveWorkout(
 
     return { kind: "ok" as const, workoutExercises };
   });
+}
+
+export async function reorderActiveWorkoutExercises(
+  workoutSessionId: string,
+  workoutExerciseIds: string[],
+) {
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const session = await tx.workoutSession.findUnique({
+        where: { id: workoutSessionId },
+        select: { id: true, status: true },
+      });
+
+      if (!session || session.status !== "active") {
+        return { kind: "workout_not_found" as const };
+      }
+
+      const currentWorkoutExercises = await tx.workoutSessionExercise.findMany({
+        where: { workoutSessionId },
+        orderBy: { orderIndex: "asc" },
+        select: { id: true, orderIndex: true },
+      });
+
+      if (currentWorkoutExercises.length !== workoutExerciseIds.length) {
+        return { kind: "workout_exercise_set_mismatch" as const };
+      }
+
+      const currentWorkoutExerciseIds = new Set(
+        currentWorkoutExercises.map((workoutExercise) => workoutExercise.id),
+      );
+
+      if (
+        workoutExerciseIds.some(
+          (workoutExerciseId) =>
+            !currentWorkoutExerciseIds.has(workoutExerciseId),
+        )
+      ) {
+        return { kind: "workout_exercise_set_mismatch" as const };
+      }
+
+      const orderOffset =
+        currentWorkoutExercises.reduce(
+          (maxOrderIndex, workoutExercise) =>
+            Math.max(maxOrderIndex, workoutExercise.orderIndex),
+          -1,
+        ) +
+        currentWorkoutExercises.length +
+        1;
+
+      await tx.workoutSessionExercise.updateMany({
+        where: { workoutSessionId },
+        data: {
+          orderIndex: {
+            increment: orderOffset,
+          },
+        },
+      });
+
+      for (const [orderIndex, workoutExerciseId] of workoutExerciseIds.entries()) {
+        await tx.workoutSessionExercise.update({
+          where: { id: workoutExerciseId },
+          data: { orderIndex },
+          select: { id: true },
+        });
+      }
+
+      const workoutExercises = await tx.workoutSessionExercise.findMany({
+        where: { workoutSessionId },
+        orderBy: { orderIndex: "asc" },
+        select: workoutSessionExerciseSelect,
+      });
+
+      return { kind: "ok" as const, workoutExercises };
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      return { kind: "order_conflict" as const };
+    }
+
+    throw error;
+  }
 }
 
 function resolveWorkoutExerciseInputUnit(
