@@ -26,6 +26,7 @@ export type ActiveWorkoutSession = {
 
 type ActiveWorkoutContextValue = {
   clear: () => void;
+  consumeOpenLiveRequest: () => void;
   error: string | null;
   isLoading: boolean;
   offsetMs: number | null;
@@ -95,7 +96,11 @@ export function ActiveWorkoutProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<ActiveWorkoutContextValue>(
     () => ({
-      clear: () => replaceSession(null),
+      clear: () => {
+        replaceSession(null);
+        setOpenLiveRequest(0);
+      },
+      consumeOpenLiveRequest: () => setOpenLiveRequest(0),
       error,
       isLoading: !hasLoaded,
       openLiveRequest,

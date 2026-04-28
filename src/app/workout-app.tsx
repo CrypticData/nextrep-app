@@ -83,6 +83,7 @@ type WorkoutSetPatch = {
 export function WorkoutApp() {
   const {
     clear,
+    consumeOpenLiveRequest,
     error: activeWorkoutError,
     isLoading,
     openLiveRequest,
@@ -98,11 +99,14 @@ export function WorkoutApp() {
 
   useEffect(() => {
     if (openLiveRequest > 0 && session) {
-      const timeout = window.setTimeout(() => setScreen("live"), 0);
+      const timeout = window.setTimeout(() => {
+        setScreen("live");
+        consumeOpenLiveRequest();
+      }, 0);
 
       return () => window.clearTimeout(timeout);
     }
-  }, [openLiveRequest, session]);
+  }, [consumeOpenLiveRequest, openLiveRequest, session]);
 
   useEffect(() => {
     if (!session && screen === "live") {
