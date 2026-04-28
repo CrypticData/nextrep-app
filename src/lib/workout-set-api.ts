@@ -392,6 +392,54 @@ export async function deleteActiveWorkoutSet(workoutSetId: string) {
   });
 }
 
+export async function reindexWorkoutExerciseSets(
+  tx: Prisma.TransactionClient,
+  workoutSessionExerciseId: string,
+) {
+  const sets = await tx.workoutSet.findMany({
+    where: { workoutSessionExerciseId },
+    orderBy: { rowIndex: "asc" },
+    select: {
+      id: true,
+      rowIndex: true,
+      setType: true,
+    },
+  });
+  const numbering = recalculateSetNumbering(sets);
+
+  if (!numbering.ok) {
+    return { ok: false as const };
+  }
+
+  const rowIndexOffset =
+    sets.reduce((maxRowIndex, set) => Math.max(maxRowIndex, set.rowIndex), 0) +
+    1;
+
+  for (const set of sets) {
+    await tx.workoutSet.update({
+      where: { id: set.id },
+      data: { rowIndex: set.rowIndex + rowIndexOffset },
+      select: { id: true },
+    });
+  }
+
+  for (const [index, set] of sets.entries()) {
+    const setNumbering = numbering.data[index];
+
+    await tx.workoutSet.update({
+      where: { id: set.id },
+      data: {
+        rowIndex: index + 1,
+        setNumber: setNumbering.setNumber,
+        parentSetId: setNumbering.parentSetId,
+      },
+      select: { id: true },
+    });
+  }
+
+  return { ok: true as const };
+}
+
 export { toWorkoutSetResponse };
 
 type ExistingSet = {

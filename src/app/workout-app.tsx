@@ -80,6 +80,18 @@ type WorkoutSetPatch = {
   set_type?: WorkoutSet["set_type"];
 };
 
+type FinishValidationResponse =
+  | { can_continue: true }
+  | {
+      can_continue: false;
+      reason: "no_recorded_sets" | "not_active";
+    }
+  | {
+      can_continue: false;
+      reason: "invalid_weighted_sets";
+      invalid_set_count: number;
+    };
+
 export function WorkoutApp() {
   const {
     clear,
@@ -96,6 +108,7 @@ export function WorkoutApp() {
   const [isDiscarding, setIsDiscarding] = useState(false);
   const [isDiscardSheetOpen, setIsDiscardSheetOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (openLiveRequest > 0 && session) {
@@ -119,6 +132,7 @@ export function WorkoutApp() {
   async function handleStartWorkout() {
     setIsStarting(true);
     setError(null);
+    setSuccessMessage(null);
 
     try {
       const startedSession = await fetchJson<WorkoutSession>(
@@ -156,6 +170,7 @@ export function WorkoutApp() {
       clear();
       setIsDiscardSheetOpen(false);
       setScreen("start");
+      setSuccessMessage(null);
     } catch (discardError) {
       setError(getErrorMessage(discardError));
     } finally {
@@ -182,6 +197,12 @@ export function WorkoutApp() {
       {!isLoading && !blockingError && screen === "live" && session ? (
         <LiveWorkout
           isDiscarding={isDiscarding}
+          onSaved={() => {
+            clear();
+            setScreen("start");
+            setSuccessMessage("Workout saved");
+            window.setTimeout(() => setSuccessMessage(null), 2000);
+          }}
           onMinimize={() => setScreen("start")}
           onDiscard={() => {
             setError(null);
@@ -201,6 +222,7 @@ export function WorkoutApp() {
           }
           isStarting={isStarting}
           onStart={() => void handleStartWorkout()}
+          successMessage={successMessage}
         />
       ) : null}
 
@@ -268,14 +290,21 @@ function StartWorkout({
   helperText,
   isStarting,
   onStart,
+  successMessage,
 }: {
   disabled: boolean;
   helperText?: string;
   isStarting: boolean;
   onStart: () => void;
+  successMessage: string | null;
 }) {
   return (
     <div className="flex min-h-[58dvh] flex-col justify-center">
+      {successMessage ? (
+        <div className="mb-4 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm font-semibold text-emerald-100">
+          {successMessage}
+        </div>
+      ) : null}
       <section className="rounded-3xl border border-white/10 bg-[#181818] p-5">
         <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-400/10 text-emerald-300">
           <PlayIcon className="h-7 w-7" />
@@ -305,14 +334,16 @@ function LiveWorkout({
   isDiscarding,
   onDiscard,
   onMinimize,
+  onSaved,
   session,
 }: {
   isDiscarding: boolean;
   onDiscard: () => void;
   onMinimize: () => void;
+  onSaved: () => void;
   session: WorkoutSession;
 }) {
-  const { refresh } = useActiveWorkout();
+  const { clear, offsetMs, refresh } = useActiveWorkout();
   const elapsedSeconds = useElapsedSeconds(session.started_at);
   const [workoutExercises, setWorkoutExercises] = useState<
     WorkoutSessionExercise[]
@@ -344,6 +375,11 @@ function LiveWorkout({
     Set<string>
   >(() => new Set());
   const [setEditError, setSetEditError] = useState<string | null>(null);
+  const [finishError, setFinishError] = useState<string | null>(null);
+  const [isFinishing, setIsFinishing] = useState(false);
+  const [isInvalidRowsSheetOpen, setIsInvalidRowsSheetOpen] = useState(false);
+  const [invalidWeightedSetCount, setInvalidWeightedSetCount] = useState(0);
+  const [isDiscardingInvalidRows, setIsDiscardingInvalidRows] = useState(false);
 
   const loadWorkoutExercises = useCallback(async () => {
     setIsLoadingWorkoutExercises(true);
@@ -414,6 +450,7 @@ function LiveWorkout({
   async function handleAddExercise(exercise: Exercise) {
     setAddingExerciseId(exercise.id);
     setLibraryError(null);
+    setFinishError(null);
 
     try {
       const workoutExercise = await fetchJson<WorkoutSessionExercise>(
@@ -446,6 +483,7 @@ function LiveWorkout({
   ) {
     setSavingSetIds((currentIds) => new Set(currentIds).add(setId));
     setSetEditError(null);
+    setFinishError(null);
 
     try {
       const updatedSets = await fetchJson<WorkoutSet[]>(`/api/sets/${setId}`, {
@@ -493,6 +531,7 @@ function LiveWorkout({
       new Set(currentIds).add(workoutExerciseId),
     );
     setSetEditError(null);
+    setFinishError(null);
 
     try {
       const createdSet = await fetchJson<WorkoutSet>(
@@ -524,6 +563,7 @@ function LiveWorkout({
   async function handleDeleteSet(workoutExerciseId: string, setId: string) {
     setDeletingSetIds((currentIds) => new Set(currentIds).add(setId));
     setSetEditError(null);
+    setFinishError(null);
 
     try {
       const updatedSets = await fetchJson<WorkoutSet[]>(`/api/sets/${setId}`, {
@@ -599,6 +639,7 @@ function LiveWorkout({
       new Set(currentIds).add(workoutExercise.id),
     );
     setSetEditError(null);
+    setFinishError(null);
 
     try {
       const updatedWorkoutExercises = await fetchJson<
@@ -619,6 +660,88 @@ function LiveWorkout({
     }
   }
 
+  async function handleFinishWorkout() {
+    setIsFinishing(true);
+    setFinishError(null);
+
+    try {
+      await validateAndFinishWorkout();
+    } catch (error) {
+      setFinishError(getErrorMessage(error));
+    } finally {
+      setIsFinishing(false);
+    }
+  }
+
+  async function handleDiscardInvalidRowsAndFinish() {
+    setIsDiscardingInvalidRows(true);
+    setFinishError(null);
+
+    try {
+      const response = await fetch(
+        `/api/workout-sessions/${session.id}/sets/discard-invalid`,
+        { method: "POST" },
+      );
+
+      if (!response.ok) {
+        throw new Error(await readErrorResponse(response));
+      }
+
+      setIsInvalidRowsSheetOpen(false);
+      setInvalidWeightedSetCount(0);
+      await loadWorkoutExercises();
+      setIsFinishing(true);
+      await validateAndFinishWorkout();
+    } catch (error) {
+      setFinishError(getErrorMessage(error));
+    } finally {
+      setIsDiscardingInvalidRows(false);
+      setIsFinishing(false);
+    }
+  }
+
+  async function validateAndFinishWorkout() {
+    const validation = await fetchJson<FinishValidationResponse>(
+      `/api/workout-sessions/${session.id}/finish/validate`,
+      { method: "POST" },
+    );
+
+    if (validation.can_continue) {
+      await commitFinishedWorkout();
+      return;
+    }
+
+    if (validation.reason === "not_active") {
+      setFinishError("This workout was already completed or discarded.");
+      clear();
+      return;
+    }
+
+    if (validation.reason === "invalid_weighted_sets") {
+      setInvalidWeightedSetCount(validation.invalid_set_count);
+      setIsInvalidRowsSheetOpen(true);
+      return;
+    }
+
+    setFinishError(
+      workoutExercises.length === 0
+        ? "You haven't added any exercises yet. Add an exercise and log a set to finish this workout."
+        : "You haven't logged any sets yet. Record at least one set with reps to finish this workout.",
+    );
+  }
+
+  async function commitFinishedWorkout() {
+    await fetchJson<WorkoutSession>(`/api/workout-sessions/${session.id}/finish`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(buildStubFinishPayload(session, offsetMs)),
+    });
+
+    onSaved();
+  }
+
   const workoutSummary = useMemo(
     () => getWorkoutSummary(workoutExercises, session.default_weight_unit),
     [session.default_weight_unit, workoutExercises],
@@ -629,7 +752,9 @@ function LiveWorkout({
       <div className="space-y-4">
         <LiveWorkoutStickyHeader
           duration={formatElapsedWords(elapsedSeconds)}
+          isFinishing={isFinishing}
           onMinimize={onMinimize}
+          onFinish={() => void handleFinishWorkout()}
           sets={workoutSummary.checkedSets}
           volume={formatVolumeSummary(
             workoutSummary.volumeValue,
@@ -645,6 +770,8 @@ function LiveWorkout({
             onRetry={() => void loadWorkoutExercises()}
           />
         ) : null}
+
+        {finishError ? <FinishError message={finishError} /> : null}
 
         {!isLoadingWorkoutExercises &&
         !workoutExercisesError &&
@@ -729,6 +856,24 @@ function LiveWorkout({
           totalExerciseCount={exerciseLibrary.length}
         />
       ) : null}
+
+      {isInvalidRowsSheetOpen ? (
+        <ConfirmSheet
+          confirmLabel="Discard & Finish"
+          confirmingLabel="Discarding"
+          description="These rows have a weight but no reps. They cannot be saved."
+          error={finishError}
+          isConfirming={isDiscardingInvalidRows}
+          onCancel={() => {
+            if (!isDiscardingInvalidRows) {
+              setIsInvalidRowsSheetOpen(false);
+              setFinishError(null);
+            }
+          }}
+          onConfirm={() => void handleDiscardInvalidRowsAndFinish()}
+          title={`Discard ${invalidWeightedSetCount} unfinished ${invalidWeightedSetCount === 1 ? "row" : "rows"} to finish?`}
+        />
+      ) : null}
     </>
   );
 }
@@ -785,13 +930,25 @@ function SetEditError({ message }: { message: string }) {
   );
 }
 
+function FinishError({ message }: { message: string }) {
+  return (
+    <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm font-semibold leading-6 text-amber-100">
+      {message}
+    </div>
+  );
+}
+
 function LiveWorkoutStickyHeader({
   duration,
+  isFinishing,
+  onFinish,
   onMinimize,
   sets,
   volume,
 }: {
   duration: string;
+  isFinishing: boolean;
+  onFinish: () => void;
   onMinimize: () => void;
   sets: number;
   volume: string;
@@ -819,9 +976,11 @@ function LiveWorkoutStickyHeader({
         </button>
         <button
           type="button"
-          className="h-10 rounded-xl bg-emerald-500 px-4 text-sm font-bold text-white shadow-lg shadow-emerald-950/40 transition active:scale-[0.99]"
+          onClick={onFinish}
+          disabled={isFinishing}
+          className="h-10 rounded-xl bg-emerald-500 px-4 text-sm font-bold text-white shadow-lg shadow-emerald-950/40 transition active:scale-[0.99] disabled:cursor-wait disabled:bg-zinc-700 disabled:text-zinc-300"
         >
-          Finish
+          {isFinishing ? "Finishing" : "Finish"}
         </button>
       </div>
 
@@ -1775,6 +1934,40 @@ function formatElapsedWords(totalSeconds: number) {
   }
 
   return `${seconds}s`;
+}
+
+function buildStubFinishPayload(
+  session: WorkoutSession,
+  offsetMs: number | null,
+) {
+  const startedAtMs = Date.parse(session.started_at);
+  const durationSeconds = Number.isNaN(startedAtMs)
+    ? 0
+    : Math.max(
+        0,
+        Math.floor((Date.now() + (offsetMs ?? 0) - startedAtMs) / 1000),
+      );
+
+  return {
+    name: `Workout — ${formatWorkoutNameDate(session.started_at)}`,
+    description: null,
+    started_at: session.started_at,
+    duration_seconds: durationSeconds,
+  };
+}
+
+function formatWorkoutNameDate(startedAt: string) {
+  const date = new Date(startedAt);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Today";
+  }
+
+  const weekday = date.toLocaleDateString("en-US", { weekday: "short" });
+  const month = date.toLocaleDateString("en-US", { month: "short" });
+  const day = date.getDate();
+
+  return `${weekday} ${month} ${day}`;
 }
 
 function sortWorkoutExercises(exercises: WorkoutSessionExercise[]) {
