@@ -7,7 +7,7 @@ import type { ActiveWorkoutSession } from "./active-workout-context";
 import { AppShell } from "./app-shell";
 import { ConfirmSheet } from "./confirm-sheet";
 
-type WorkoutScreen = "start" | "live";
+type WorkoutScreen = "start" | "live" | "save";
 type WorkoutSession = ActiveWorkoutSession;
 
 type Reference = {
@@ -92,6 +92,21 @@ type FinishValidationResponse =
       invalid_set_count: number;
     };
 
+type SaveWorkoutDraft = {
+  name: string;
+  description: string;
+  startedAtLocal: string;
+  durationHours: number;
+  durationMinutes: number;
+  durationSecondsRemainder: number;
+  summary: {
+    durationSeconds: number;
+    recordedSetCount: number;
+    volumeValue: number;
+    volumeUnit: "lbs" | "kg";
+  };
+};
+
 export function WorkoutApp() {
   const {
     clear,
@@ -109,6 +124,8 @@ export function WorkoutApp() {
   const [isDiscardSheetOpen, setIsDiscardSheetOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [saveWorkoutDraft, setSaveWorkoutDraft] =
+    useState<SaveWorkoutDraft | null>(null);
 
   useEffect(() => {
     if (openLiveRequest > 0 && session) {
@@ -122,17 +139,26 @@ export function WorkoutApp() {
   }, [consumeOpenLiveRequest, openLiveRequest, session]);
 
   useEffect(() => {
-    if (!session && screen === "live") {
+    if (!session && (screen === "live" || screen === "save")) {
       const timeout = window.setTimeout(() => setScreen("start"), 0);
 
       return () => window.clearTimeout(timeout);
     }
   }, [screen, session]);
 
+  useEffect(() => {
+    if (screen === "save" && !saveWorkoutDraft) {
+      const timeout = window.setTimeout(() => setScreen("live"), 0);
+
+      return () => window.clearTimeout(timeout);
+    }
+  }, [saveWorkoutDraft, screen]);
+
   async function handleStartWorkout() {
     setIsStarting(true);
     setError(null);
     setSuccessMessage(null);
+    setSaveWorkoutDraft(null);
 
     try {
       const startedSession = await fetchJson<WorkoutSession>(
@@ -171,6 +197,7 @@ export function WorkoutApp() {
       setIsDiscardSheetOpen(false);
       setScreen("start");
       setSuccessMessage(null);
+      setSaveWorkoutDraft(null);
     } catch (discardError) {
       setError(getErrorMessage(discardError));
     } finally {
@@ -178,15 +205,23 @@ export function WorkoutApp() {
     }
   }
 
-  const isLiveScreen = screen === "live";
+  function handleWorkoutSaved() {
+    clear();
+    setScreen("start");
+    setSaveWorkoutDraft(null);
+    setSuccessMessage("Workout saved");
+    window.setTimeout(() => setSuccessMessage(null), 2000);
+  }
+
+  const isActiveWorkoutScreen = screen === "live" || screen === "save";
   const blockingError = activeWorkoutError ?? error;
 
   return (
     <AppShell
-      hideFloatingCard={isLiveScreen}
-      hideHeader={isLiveScreen}
-      mainClassName={isLiveScreen ? "px-5 pb-6 pt-0" : undefined}
-      title={isLiveScreen ? "Log Workout" : "Workout"}
+      hideFloatingCard={isActiveWorkoutScreen}
+      hideHeader={isActiveWorkoutScreen}
+      mainClassName={isActiveWorkoutScreen ? "px-5 pb-6 pt-0" : undefined}
+      title={isActiveWorkoutScreen ? "Log Workout" : "Workout"}
     >
       {isLoading ? <WorkoutLoading /> : null}
 
@@ -197,17 +232,33 @@ export function WorkoutApp() {
       {!isLoading && !blockingError && screen === "live" && session ? (
         <LiveWorkout
           isDiscarding={isDiscarding}
-          onSaved={() => {
-            clear();
-            setScreen("start");
-            setSuccessMessage("Workout saved");
-            window.setTimeout(() => setSuccessMessage(null), 2000);
+          onReadyToSave={(draft) => {
+            setSaveWorkoutDraft(draft);
+            setScreen("save");
           }}
           onMinimize={() => setScreen("start")}
           onDiscard={() => {
             setError(null);
             setIsDiscardSheetOpen(true);
           }}
+          session={session}
+        />
+      ) : null}
+
+      {!isLoading &&
+      !blockingError &&
+      screen === "save" &&
+      session &&
+      saveWorkoutDraft ? (
+        <SaveWorkoutScreen
+          draft={saveWorkoutDraft}
+          isDiscarding={isDiscarding}
+          onBack={() => setScreen("live")}
+          onDiscard={() => {
+            setError(null);
+            setIsDiscardSheetOpen(true);
+          }}
+          onSaved={handleWorkoutSaved}
           session={session}
         />
       ) : null}
@@ -334,13 +385,13 @@ function LiveWorkout({
   isDiscarding,
   onDiscard,
   onMinimize,
-  onSaved,
+  onReadyToSave,
   session,
 }: {
   isDiscarding: boolean;
   onDiscard: () => void;
   onMinimize: () => void;
-  onSaved: () => void;
+  onReadyToSave: (draft: SaveWorkoutDraft) => void;
   session: WorkoutSession;
 }) {
   const { clear, offsetMs, refresh } = useActiveWorkout();
@@ -389,10 +440,13 @@ function LiveWorkout({
       const workoutExerciseData = await fetchJson<WorkoutSessionExercise[]>(
         `/api/workout-sessions/${session.id}/exercises`,
       );
+      const sortedWorkoutExercises = sortWorkoutExercises(workoutExerciseData);
 
-      setWorkoutExercises(sortWorkoutExercises(workoutExerciseData));
+      setWorkoutExercises(sortedWorkoutExercises);
+      return sortedWorkoutExercises;
     } catch (error) {
       setWorkoutExercisesError(getErrorMessage(error));
+      return null;
     } finally {
       setIsLoadingWorkoutExercises(false);
     }
@@ -689,9 +743,9 @@ function LiveWorkout({
 
       setIsInvalidRowsSheetOpen(false);
       setInvalidWeightedSetCount(0);
-      await loadWorkoutExercises();
+      const updatedWorkoutExercises = await loadWorkoutExercises();
       setIsFinishing(true);
-      await validateAndFinishWorkout();
+      await validateAndFinishWorkout(updatedWorkoutExercises ?? workoutExercises);
     } catch (error) {
       setFinishError(getErrorMessage(error));
     } finally {
@@ -700,14 +754,18 @@ function LiveWorkout({
     }
   }
 
-  async function validateAndFinishWorkout() {
+  async function validateAndFinishWorkout(
+    exercisesForSummary = workoutExercises,
+  ) {
     const validation = await fetchJson<FinishValidationResponse>(
       `/api/workout-sessions/${session.id}/finish/validate`,
       { method: "POST" },
     );
 
     if (validation.can_continue) {
-      await commitFinishedWorkout();
+      onReadyToSave(
+        buildDefaultSaveWorkoutDraft(session, offsetMs, exercisesForSummary),
+      );
       return;
     }
 
@@ -728,18 +786,6 @@ function LiveWorkout({
         ? "You haven't added any exercises yet. Add an exercise and log a set to finish this workout."
         : "You haven't logged any sets yet. Record at least one set with reps to finish this workout.",
     );
-  }
-
-  async function commitFinishedWorkout() {
-    await fetchJson<WorkoutSession>(`/api/workout-sessions/${session.id}/finish`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(buildStubFinishPayload(session, offsetMs)),
-    });
-
-    onSaved();
   }
 
   const workoutSummary = useMemo(
@@ -875,6 +921,241 @@ function LiveWorkout({
         />
       ) : null}
     </>
+  );
+}
+
+function SaveWorkoutScreen({
+  draft,
+  isDiscarding,
+  onBack,
+  onDiscard,
+  onSaved,
+  session,
+}: {
+  draft: SaveWorkoutDraft;
+  isDiscarding: boolean;
+  onBack: () => void;
+  onDiscard: () => void;
+  onSaved: () => void;
+  session: WorkoutSession;
+}) {
+  const [name, setName] = useState(draft.name);
+  const [description, setDescription] = useState(draft.description);
+  const [startedAtLocal, setStartedAtLocal] = useState(draft.startedAtLocal);
+  const [durationHours, setDurationHours] = useState(
+    draft.durationHours.toString(),
+  );
+  const [durationMinutes, setDurationMinutes] = useState(
+    draft.durationMinutes.toString(),
+  );
+  const [durationSecondsRemainder, setDurationSecondsRemainder] = useState(
+    draft.durationSecondsRemainder.toString(),
+  );
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const durationSeconds = getDurationSecondsFromInputs(
+    durationHours,
+    durationMinutes,
+    durationSecondsRemainder,
+  );
+
+  async function handleSaveWorkout() {
+    const trimmedName = name.trim();
+    const parsedStartedAt = readLocalDateTimeInput(startedAtLocal);
+
+    setSaveError(null);
+
+    if (trimmedName.length < 1 || trimmedName.length > 120) {
+      setSaveError("Workout title must be 1-120 characters.");
+      return;
+    }
+
+    if (!parsedStartedAt) {
+      setSaveError("Start date and time must be valid.");
+      return;
+    }
+
+    if (durationSeconds === null) {
+      setSaveError("Duration must use non-negative whole time values.");
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      await fetchJson<WorkoutSession>(
+        `/api/workout-sessions/${session.id}/finish`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: trimmedName,
+            description: description.trim() || null,
+            started_at: parsedStartedAt.toISOString(),
+            duration_seconds: durationSeconds,
+          }),
+        },
+      );
+
+      onSaved();
+    } catch (error) {
+      setSaveError(getErrorMessage(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="sticky top-0 z-30 -mx-5 -mt-px bg-[#101010]">
+        <div className="grid min-h-[68px] grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-2 border-b border-white/10 bg-[#181818] px-5 py-3">
+          <button
+            type="button"
+            onClick={onBack}
+            className="-ml-2 flex h-10 w-10 items-center justify-center rounded-full text-zinc-100 transition active:scale-95 active:bg-white/[0.06]"
+            aria-label="Back to live workout"
+          >
+            <ChevronDownIcon className="h-7 w-7 rotate-90" />
+          </button>
+          <h1 className="min-w-0 truncate text-xl font-semibold tracking-normal text-white">
+            Save Workout
+          </h1>
+          <button
+            type="button"
+            onClick={() => void handleSaveWorkout()}
+            disabled={isSaving}
+            className="h-10 rounded-xl bg-emerald-500 px-4 text-sm font-bold text-white shadow-lg shadow-emerald-950/40 transition active:scale-[0.99] disabled:cursor-wait disabled:bg-zinc-700 disabled:text-zinc-300"
+          >
+            {isSaving ? "Saving" : "Save"}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid min-h-[68px] grid-cols-[minmax(118px,1.35fr)_minmax(74px,0.85fr)_minmax(58px,0.55fr)] gap-2 border-y border-white/10 bg-[#101010] px-0 py-3">
+        <LiveWorkoutStat
+          label="Duration"
+          value={formatElapsedWords(
+            durationSeconds ?? draft.summary.durationSeconds,
+          )}
+          accent
+        />
+        <LiveWorkoutStat
+          label="Volume"
+          value={formatVolumeSummary(
+            draft.summary.volumeValue,
+            draft.summary.volumeUnit,
+          )}
+        />
+        <LiveWorkoutStat
+          label="Sets"
+          value={draft.summary.recordedSetCount.toString()}
+        />
+      </div>
+
+      {saveError ? <FinishError message={saveError} /> : null}
+
+      <section className="-mx-5 space-y-5 border-y border-white/[0.07] bg-[#101010] px-5 py-5">
+        <SaveWorkoutField label="Workout Title">
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            maxLength={120}
+            className="h-12 w-full rounded-2xl border border-white/10 bg-[#181818] px-4 text-base font-semibold text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-[#1d1d1d]"
+            placeholder="Workout title"
+          />
+        </SaveWorkoutField>
+
+        <SaveWorkoutField label="When">
+          <input
+            type="datetime-local"
+            value={startedAtLocal}
+            onChange={(event) => setStartedAtLocal(event.target.value)}
+            className="h-12 w-full rounded-2xl border border-white/10 bg-[#181818] px-4 text-base font-semibold text-white outline-none transition focus:border-emerald-300/40 focus:bg-[#1d1d1d]"
+          />
+        </SaveWorkoutField>
+
+        <SaveWorkoutField label="Duration">
+          <div className="grid grid-cols-3 gap-3">
+            <label className="block">
+              <span className="mb-2 block text-xs font-semibold text-zinc-500">
+                Hours
+              </span>
+              <input
+                inputMode="numeric"
+                value={durationHours}
+                onChange={(event) => setDurationHours(event.target.value)}
+                className="h-12 w-full rounded-2xl border border-white/10 bg-[#181818] px-4 text-center text-lg font-semibold text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-[#1d1d1d]"
+                placeholder="0"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-xs font-semibold text-zinc-500">
+                Minutes
+              </span>
+              <input
+                inputMode="numeric"
+                value={durationMinutes}
+                onChange={(event) => setDurationMinutes(event.target.value)}
+                className="h-12 w-full rounded-2xl border border-white/10 bg-[#181818] px-4 text-center text-lg font-semibold text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-[#1d1d1d]"
+                placeholder="0"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-2 block text-xs font-semibold text-zinc-500">
+                Seconds
+              </span>
+              <input
+                inputMode="numeric"
+                value={durationSecondsRemainder}
+                onChange={(event) =>
+                  setDurationSecondsRemainder(event.target.value)
+                }
+                className="h-12 w-full rounded-2xl border border-white/10 bg-[#181818] px-4 text-center text-lg font-semibold text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-[#1d1d1d]"
+                placeholder="0"
+              />
+            </label>
+          </div>
+        </SaveWorkoutField>
+
+        <SaveWorkoutField label="Description">
+          <textarea
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            rows={4}
+            className="w-full resize-none rounded-2xl border border-white/10 bg-[#181818] px-4 py-3 text-base font-medium leading-6 text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-[#1d1d1d]"
+            placeholder="Notes"
+          />
+        </SaveWorkoutField>
+      </section>
+
+      <button
+        type="button"
+        onClick={onDiscard}
+        disabled={isDiscarding || isSaving}
+        className="h-12 w-full rounded-2xl border border-red-400/20 bg-red-500/10 px-4 text-base font-bold text-red-200 transition hover:bg-red-500/15 active:scale-[0.99] disabled:cursor-not-allowed disabled:text-red-200/50"
+      >
+        {isDiscarding ? "Discarding" : "Discard Workout"}
+      </button>
+    </div>
+  );
+}
+
+function SaveWorkoutField({
+  children,
+  label,
+}: {
+  children: ReactNode;
+  label: string;
+}) {
+  return (
+    <div className="block">
+      <span className="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-zinc-500">
+        {label}
+      </span>
+      {children}
+    </div>
   );
 }
 
@@ -1936,10 +2217,11 @@ function formatElapsedWords(totalSeconds: number) {
   return `${seconds}s`;
 }
 
-function buildStubFinishPayload(
+function buildDefaultSaveWorkoutDraft(
   session: WorkoutSession,
   offsetMs: number | null,
-) {
+  workoutExercises: WorkoutSessionExercise[],
+): SaveWorkoutDraft {
   const startedAtMs = Date.parse(session.started_at);
   const durationSeconds = Number.isNaN(startedAtMs)
     ? 0
@@ -1948,12 +2230,86 @@ function buildStubFinishPayload(
         Math.floor((Date.now() + (offsetMs ?? 0) - startedAtMs) / 1000),
       );
 
+  const durationHours = Math.floor(durationSeconds / 3600);
+  const durationMinutes = Math.floor((durationSeconds % 3600) / 60);
+  const durationSecondsRemainder = durationSeconds % 60;
+  const workoutSummary = getWorkoutSummary(
+    workoutExercises,
+    session.default_weight_unit,
+  );
+
   return {
     name: `Workout — ${formatWorkoutNameDate(session.started_at)}`,
-    description: null,
-    started_at: session.started_at,
-    duration_seconds: durationSeconds,
+    description: "",
+    startedAtLocal: toLocalDateTimeInputValue(session.started_at),
+    durationHours,
+    durationMinutes,
+    durationSecondsRemainder,
+    summary: {
+      durationSeconds,
+      recordedSetCount: workoutSummary.recordedSets,
+      volumeValue: workoutSummary.volumeValue,
+      volumeUnit: workoutSummary.volumeUnit,
+    },
   };
+}
+
+function getDurationSecondsFromInputs(
+  hours: string,
+  minutes: string,
+  seconds: string,
+) {
+  const parsedHours = parseNonNegativeInteger(hours);
+  const parsedMinutes = parseNonNegativeInteger(minutes);
+  const parsedSeconds = parseNonNegativeInteger(seconds);
+
+  if (
+    parsedHours === null ||
+    parsedMinutes === null ||
+    parsedSeconds === null
+  ) {
+    return null;
+  }
+
+  return parsedHours * 3600 + parsedMinutes * 60 + parsedSeconds;
+}
+
+function parseNonNegativeInteger(value: string) {
+  const trimmedValue = value.trim();
+
+  if (!/^\d+$/.test(trimmedValue)) {
+    return null;
+  }
+
+  const parsedValue = Number(trimmedValue);
+
+  return Number.isSafeInteger(parsedValue) ? parsedValue : null;
+}
+
+function toLocalDateTimeInputValue(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return [
+    date.getFullYear().toString().padStart(4, "0"),
+    "-",
+    (date.getMonth() + 1).toString().padStart(2, "0"),
+    "-",
+    date.getDate().toString().padStart(2, "0"),
+    "T",
+    date.getHours().toString().padStart(2, "0"),
+    ":",
+    date.getMinutes().toString().padStart(2, "0"),
+  ].join("");
+}
+
+function readLocalDateTimeInput(value: string) {
+  const parsedTime = new Date(value).getTime();
+
+  return Number.isNaN(parsedTime) ? null : new Date(parsedTime);
 }
 
 function formatWorkoutNameDate(startedAt: string) {
@@ -2009,6 +2365,8 @@ function getWorkoutSummary(
 
   return {
     checkedSets: sets.filter((set) => set.checked).length,
+    recordedSets: sets.filter((set) => set.reps !== null && set.reps >= 1)
+      .length,
     volumeValue,
     volumeUnit: defaultWeightUnit,
   };
