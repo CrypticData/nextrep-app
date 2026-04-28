@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useActiveWorkout, useElapsedSeconds } from "./active-workout-context";
@@ -21,29 +22,11 @@ import {
 type WorkoutScreen = "start" | "live" | "save";
 type WorkoutSession = ActiveWorkoutSession;
 
-type Reference = {
-  id: string;
-  name: string;
-};
-
 type ExerciseType =
   | "weight_reps"
   | "bodyweight_reps"
   | "weighted_bodyweight"
   | "assisted_bodyweight";
-
-type Exercise = {
-  id: string;
-  name: string;
-  description: string | null;
-  exercise_type: ExerciseType;
-  weight_unit_preference: "lbs" | "kg" | null;
-  equipment_type: Reference;
-  primary_muscle_group: Reference;
-  secondary_muscle_groups: Reference[];
-  created_at: string;
-  updated_at: string;
-};
 
 type WorkoutSet = {
   id: string;
@@ -405,22 +388,17 @@ function LiveWorkout({
   onReadyToSave: (draft: SaveWorkoutDraft) => void;
   session: WorkoutSession;
 }) {
+  const router = useRouter();
   const { clear, offsetMs, refresh } = useActiveWorkout();
   const elapsedSeconds = useElapsedSeconds(session.started_at);
   const [workoutExercises, setWorkoutExercises] = useState<
     WorkoutSessionExercise[]
   >([]);
-  const [exerciseLibrary, setExerciseLibrary] = useState<Exercise[]>([]);
   const [isLoadingWorkoutExercises, setIsLoadingWorkoutExercises] =
     useState(true);
   const [workoutExercisesError, setWorkoutExercisesError] = useState<
     string | null
   >(null);
-  const [isPickerOpen, setIsPickerOpen] = useState(false);
-  const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
-  const [libraryError, setLibraryError] = useState<string | null>(null);
-  const [exerciseSearch, setExerciseSearch] = useState("");
-  const [addingExerciseId, setAddingExerciseId] = useState<string | null>(null);
   const [savingSetIds, setSavingSetIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -468,21 +446,6 @@ function LiveWorkout({
     }
   }, [session.id]);
 
-  const loadExerciseLibrary = useCallback(async () => {
-    setIsLoadingLibrary(true);
-    setLibraryError(null);
-
-    try {
-      const exerciseData = await fetchJson<Exercise[]>("/api/exercises");
-
-      setExerciseLibrary(sortExercises(exerciseData));
-    } catch (error) {
-      setLibraryError(getErrorMessage(error));
-    } finally {
-      setIsLoadingLibrary(false);
-    }
-  }, []);
-
   useEffect(() => {
     const timeout = window.setTimeout(() => {
       void loadWorkoutExercises();
@@ -502,59 +465,8 @@ function LiveWorkout({
     };
   }, []);
 
-  const filteredExerciseLibrary = useMemo(() => {
-    const normalizedSearch = exerciseSearch.trim().toLowerCase();
-
-    if (normalizedSearch.length === 0) {
-      return exerciseLibrary;
-    }
-
-    return exerciseLibrary.filter((exercise) => {
-      return (
-        exercise.name.toLowerCase().includes(normalizedSearch) ||
-        exercise.primary_muscle_group.name
-          .toLowerCase()
-          .includes(normalizedSearch) ||
-        exercise.equipment_type.name.toLowerCase().includes(normalizedSearch)
-      );
-    });
-  }, [exerciseLibrary, exerciseSearch]);
-
   function openExercisePicker() {
-    setIsPickerOpen(true);
-
-    if (exerciseLibrary.length === 0 && !isLoadingLibrary) {
-      void loadExerciseLibrary();
-    }
-  }
-
-  async function handleAddExercise(exercise: Exercise) {
-    setAddingExerciseId(exercise.id);
-    setLibraryError(null);
-    setFinishError(null);
-
-    try {
-      const workoutExercise = await fetchJson<WorkoutSessionExercise>(
-        `/api/workout-sessions/${session.id}/exercises`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ exercise_id: exercise.id }),
-        },
-      );
-
-      setWorkoutExercises((currentExercises) =>
-        sortWorkoutExercises([...currentExercises, workoutExercise]),
-      );
-      setExerciseSearch("");
-      setIsPickerOpen(false);
-    } catch (error) {
-      setLibraryError(getErrorMessage(error));
-    } finally {
-      setAddingExerciseId(null);
-    }
+    router.push("/profile/exercises?mode=add-to-workout");
   }
 
   async function handleUpdateSet(
@@ -1050,25 +962,6 @@ function LiveWorkout({
           {isDiscarding ? "Discarding" : "Discard Workout"}
         </button>
       </div>
-
-      {isPickerOpen ? (
-        <ExercisePickerSheet
-          addingExerciseId={addingExerciseId}
-          exercises={filteredExerciseLibrary}
-          isLoading={isLoadingLibrary}
-          loadError={libraryError}
-          onAddExercise={(exercise) => void handleAddExercise(exercise)}
-          onClose={() => {
-            setIsPickerOpen(false);
-            setLibraryError(null);
-            setExerciseSearch("");
-          }}
-          onRetry={() => void loadExerciseLibrary()}
-          onSearchChange={setExerciseSearch}
-          search={exerciseSearch}
-          totalExerciseCount={exerciseLibrary.length}
-        />
-      ) : null}
 
       {isInvalidRowsSheetOpen ? (
         <ConfirmSheet
@@ -2137,154 +2030,6 @@ function BottomSheet({
   );
 }
 
-function ExercisePickerSheet({
-  addingExerciseId,
-  exercises,
-  isLoading,
-  loadError,
-  onAddExercise,
-  onClose,
-  onRetry,
-  onSearchChange,
-  search,
-  totalExerciseCount,
-}: {
-  addingExerciseId: string | null;
-  exercises: Exercise[];
-  isLoading: boolean;
-  loadError: string | null;
-  onAddExercise: (exercise: Exercise) => void;
-  onClose: () => void;
-  onRetry: () => void;
-  onSearchChange: (value: string) => void;
-  search: string;
-  totalExerciseCount: number;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 px-0">
-      <section className="flex max-h-[82dvh] w-full max-w-md flex-col rounded-t-3xl border border-white/10 bg-[#101010] shadow-2xl shadow-black">
-        <div className="shrink-0 border-b border-white/10 px-5 pb-4 pt-5">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <h2 className="text-xl font-semibold text-white">
-                Add Exercise
-              </h2>
-              <p className="mt-1 text-sm text-zinc-500">
-                {totalExerciseCount} in library
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.06] text-zinc-300 transition active:scale-95"
-              aria-label="Close exercise picker"
-            >
-              <XIcon className="h-5 w-5" />
-            </button>
-          </div>
-
-          <div className="mt-4 flex items-center gap-2 rounded-2xl border border-white/10 bg-[#1b1b1b] px-3 py-2.5">
-            <SearchIcon className="h-4 w-4 shrink-0 text-zinc-500" />
-            <input
-              value={search}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search exercise"
-              className="min-w-0 flex-1 bg-transparent text-[15px] text-white outline-none placeholder:text-zinc-600"
-            />
-          </div>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-          {isLoading ? (
-            <div className="space-y-3">
-              {[0, 1, 2, 3].map((item) => (
-                <div
-                  key={item}
-                  className="h-[74px] animate-pulse rounded-2xl bg-white/[0.04]"
-                />
-              ))}
-            </div>
-          ) : null}
-
-          {!isLoading && loadError ? (
-            <InlineError message={loadError} onRetry={onRetry} />
-          ) : null}
-
-          {!isLoading && !loadError && totalExerciseCount === 0 ? (
-            <div className="py-14 text-center">
-              <p className="text-base font-semibold text-white">
-                No exercises yet
-              </p>
-              <p className="mx-auto mt-2 max-w-64 text-sm leading-6 text-zinc-500">
-                Create exercises in the Profile tab, then add them here.
-              </p>
-            </div>
-          ) : null}
-
-          {!isLoading &&
-          !loadError &&
-          totalExerciseCount > 0 &&
-          exercises.length === 0 ? (
-            <div className="py-14 text-center">
-              <p className="text-base font-semibold text-white">No matches</p>
-              <p className="mt-2 text-sm text-zinc-500">
-                Try a different search.
-              </p>
-            </div>
-          ) : null}
-
-          {!isLoading && !loadError && exercises.length > 0 ? (
-            <div className="space-y-2 pb-4">
-              {exercises.map((exercise) => (
-                <ExercisePickerRow
-                  exercise={exercise}
-                  isAdding={addingExerciseId === exercise.id}
-                  key={exercise.id}
-                  onAdd={() => onAddExercise(exercise)}
-                />
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function ExercisePickerRow({
-  exercise,
-  isAdding,
-  onAdd,
-}: {
-  exercise: Exercise;
-  isAdding: boolean;
-  onAdd: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onAdd}
-      disabled={isAdding}
-      className="flex min-h-[74px] w-full items-center gap-3 rounded-2xl border border-white/[0.06] bg-[#181818] px-3.5 py-3 text-left transition hover:border-white/10 hover:bg-[#1e1e1e] active:scale-[0.99] disabled:cursor-wait disabled:opacity-70"
-    >
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-400/10 text-sm font-bold text-emerald-300">
-        {exercise.primary_muscle_group.name.slice(0, 1).toUpperCase()}
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-base font-semibold text-white">
-          {exercise.name}
-        </p>
-        <p className="mt-1 truncate text-sm text-zinc-500">
-          {exercise.primary_muscle_group.name} · {exercise.equipment_type.name}
-        </p>
-      </div>
-      <span className="shrink-0 rounded-full bg-white/[0.06] px-3 py-1.5 text-xs font-bold text-zinc-300">
-        {isAdding ? "Adding" : getExerciseTypeLabel(exercise.exercise_type)}
-      </span>
-    </button>
-  );
-}
-
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
 
@@ -2474,12 +2219,6 @@ function sortWorkoutSets(sets: WorkoutSet[]) {
   });
 }
 
-function sortExercises(exercises: Exercise[]) {
-  return [...exercises].sort((first, second) => {
-    return first.name.localeCompare(second.name);
-  });
-}
-
 function getWorkoutSummary(
   workoutExercises: WorkoutSessionExercise[],
   defaultWeightUnit: "lbs" | "kg",
@@ -2616,19 +2355,6 @@ function getWeightInputLabel(exerciseType: ExerciseType) {
   return "Weight";
 }
 
-function getExerciseTypeLabel(exerciseType: ExerciseType) {
-  switch (exerciseType) {
-    case "weight_reps":
-      return "Weight";
-    case "bodyweight_reps":
-      return "Bodyweight";
-    case "weighted_bodyweight":
-      return "Weighted";
-    case "assisted_bodyweight":
-      return "Assisted";
-  }
-}
-
 type IconProps = {
   className?: string;
 };
@@ -2643,24 +2369,6 @@ function PlusIcon({ className }: IconProps) {
     >
       <path
         d="M12 5v14M5 12h14"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="2"
-      />
-    </svg>
-  );
-}
-
-function SearchIcon({ className }: IconProps) {
-  return (
-    <svg
-      className={className}
-      fill="none"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-    >
-      <path
-        d="m21 21-4.3-4.3M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z"
         stroke="currentColor"
         strokeLinecap="round"
         strokeWidth="2"

@@ -8,8 +8,10 @@ import { useActiveWorkout } from "./active-workout-context";
 
 type AppShellProps = {
   action?: ReactNode;
+  backAction?: () => void;
   backHref?: string;
   backLabel?: string;
+  backText?: string;
   children: ReactNode;
   hideFloatingCard?: boolean;
   hideHeader?: boolean;
@@ -25,8 +27,10 @@ const navItems = [
 
 export function AppShell({
   action,
+  backAction,
   backHref,
   backLabel = "Back",
+  backText,
   children,
   hideFloatingCard = false,
   hideHeader = false,
@@ -47,14 +51,37 @@ export function AppShell({
         {hideHeader ? null : (
           <header className="shrink-0 border-b border-white/10 px-5 pb-4 pt-6">
             {subpage ? (
-              <div className="grid grid-cols-[44px_1fr_44px] items-center gap-3">
-                {backHref ? (
-                  <Link
-                    href={backHref}
-                    className="flex h-11 w-11 items-center justify-center rounded-full text-zinc-300 transition hover:bg-white/[0.06] hover:text-white active:scale-95"
+              <div
+                className={
+                  backText
+                    ? "grid grid-cols-[74px_1fr_74px] items-center gap-3"
+                    : "grid grid-cols-[44px_1fr_44px] items-center gap-3"
+                }
+              >
+                {backAction ? (
+                  <button
+                    type="button"
+                    onClick={backAction}
+                    className={
+                      backText
+                        ? "flex h-11 items-center text-sm font-semibold text-zinc-300 transition hover:text-white active:scale-95"
+                        : "flex h-11 w-11 items-center justify-center rounded-full text-zinc-300 transition hover:bg-white/[0.06] hover:text-white active:scale-95"
+                    }
                     aria-label={backLabel}
                   >
-                    <BackIcon className="h-5 w-5" />
+                    {backText ?? <BackIcon className="h-5 w-5" />}
+                  </button>
+                ) : backHref ? (
+                  <Link
+                    href={backHref}
+                    className={
+                      backText
+                        ? "flex h-11 items-center text-sm font-semibold text-zinc-300 transition hover:text-white active:scale-95"
+                        : "flex h-11 w-11 items-center justify-center rounded-full text-zinc-300 transition hover:bg-white/[0.06] hover:text-white active:scale-95"
+                    }
+                    aria-label={backLabel}
+                  >
+                    {backText ?? <BackIcon className="h-5 w-5" />}
                   </Link>
                 ) : (
                   <div className="h-11 w-11" />

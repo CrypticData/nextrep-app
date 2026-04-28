@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -7,6 +8,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
+import { useActiveWorkout } from "./active-workout-context";
 import { AppShell } from "./app-shell";
 
 type Reference = {
@@ -48,7 +50,20 @@ type ModalMode =
       exercise: Exercise;
     };
 
-export function ExerciseLibraryApp() {
+type ExerciseLibraryMode = "manage" | "add-to-workout";
+
+export function ExerciseLibraryApp({
+  mode = "manage",
+}: {
+  mode?: ExerciseLibraryMode;
+}) {
+  const router = useRouter();
+  const {
+    refresh: refreshActiveWorkout,
+    requestOpenLive,
+    session,
+  } = useActiveWorkout();
+  const isAddToWorkoutMode = mode === "add-to-workout";
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [equipmentTypes, setEquipmentTypes] = useState<Reference[]>([]);
   const [muscleGroups, setMuscleGroups] = useState<Reference[]>([]);
@@ -65,6 +80,7 @@ export function ExerciseLibraryApp() {
   const [deletingExerciseId, setDeletingExerciseId] = useState<string | null>(
     null,
   );
+  const [addingExerciseId, setAddingExerciseId] = useState<string | null>(null);
 
   const loadLibrary = useCallback(async () => {
     setIsLoading(true);
@@ -96,14 +112,14 @@ export function ExerciseLibraryApp() {
   }, [loadLibrary]);
 
   const selectedExercise = useMemo(() => {
-    if (!selectedExerciseId) {
+    if (isAddToWorkoutMode || !selectedExerciseId) {
       return null;
     }
 
     return (
       exercises.find((exercise) => exercise.id === selectedExerciseId) ?? null
     );
-  }, [exercises, selectedExerciseId]);
+  }, [exercises, isAddToWorkoutMode, selectedExerciseId]);
 
   const filteredExercises = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
@@ -125,6 +141,34 @@ export function ExerciseLibraryApp() {
       return matchesSearch && matchesEquipment && matchesMuscle;
     });
   }, [equipmentFilterId, exercises, muscleFilterId, search]);
+
+  async function addExerciseToActiveWorkout(exercise: Exercise) {
+    if (!session) {
+      setActionError("Start a workout before adding exercises.");
+      return;
+    }
+
+    setAddingExerciseId(exercise.id);
+    setActionError(null);
+
+    try {
+      await fetchJson<unknown>(`/api/workout-sessions/${session.id}/exercises`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ exercise_id: exercise.id }),
+      });
+
+      await refreshActiveWorkout({ suppressError: true });
+      requestOpenLive();
+      router.push("/");
+    } catch (error) {
+      setActionError(getErrorMessage(error));
+    } finally {
+      setAddingExerciseId(null);
+    }
+  }
 
   async function handleSaveExercise(payload: ExercisePayload) {
     const editingExercise =
@@ -151,9 +195,27 @@ export function ExerciseLibraryApp() {
 
       return sortExercises(nextExercises);
     });
-    setSelectedExerciseId(exercise.id);
+    setSelectedExerciseId(isAddToWorkoutMode ? null : exercise.id);
     setModalMode(null);
     setActionError(null);
+
+    if (isAddToWorkoutMode && !editingExercise) {
+      await addExerciseToActiveWorkout(exercise);
+    }
+  }
+
+  function handleSelectExercise(exercise: Exercise) {
+    if (isAddToWorkoutMode) {
+      void addExerciseToActiveWorkout(exercise);
+      return;
+    }
+
+    setSelectedExerciseId(exercise.id);
+  }
+
+  function cancelAddToWorkout() {
+    requestOpenLive();
+    router.push("/");
   }
 
   async function handleDeleteExercise(exercise: Exercise) {
@@ -193,11 +255,15 @@ export function ExerciseLibraryApp() {
   return (
     <>
       <AppShell
-        backHref="/profile"
-        backLabel="Back to profile"
+        backAction={isAddToWorkoutMode ? cancelAddToWorkout : undefined}
+        backHref={isAddToWorkoutMode ? undefined : "/profile"}
+        backLabel={
+          isAddToWorkoutMode ? "Cancel adding exercise" : "Back to profile"
+        }
+        backText={isAddToWorkoutMode ? "Cancel" : undefined}
         mainClassName="px-5 pb-6 pt-0"
         subpage
-        title="Exercises"
+        title={isAddToWorkoutMode ? "Add Exercise" : "Exercises"}
         action={
           <button
             type="button"
@@ -230,10 +296,13 @@ export function ExerciseLibraryApp() {
             loadError={loadError}
             muscleFilterId={muscleFilterId}
             muscleGroups={muscleGroups}
+            mode={mode}
+            actionError={actionError}
+            addingExerciseId={addingExerciseId}
             onCreate={() => setModalMode({ kind: "create" })}
             onRetry={() => void loadLibrary()}
             onSearchChange={setSearch}
-            onSelectExercise={(exercise) => setSelectedExerciseId(exercise.id)}
+            onSelectExercise={handleSelectExercise}
             onSetEquipmentFilter={setEquipmentFilterId}
             onSetMuscleFilter={setMuscleFilterId}
             search={search}
@@ -256,6 +325,8 @@ export function ExerciseLibraryApp() {
 }
 
 function ExerciseList({
+  actionError,
+  addingExerciseId,
   equipmentFilterId,
   equipmentTypes,
   exercises,
@@ -263,6 +334,7 @@ function ExerciseList({
   loadError,
   muscleFilterId,
   muscleGroups,
+  mode,
   onCreate,
   onRetry,
   onSearchChange,
@@ -272,6 +344,8 @@ function ExerciseList({
   search,
   totalExerciseCount,
 }: {
+  actionError: string | null;
+  addingExerciseId: string | null;
   equipmentFilterId: string;
   equipmentTypes: Reference[];
   exercises: Exercise[];
@@ -279,6 +353,7 @@ function ExerciseList({
   loadError: string | null;
   muscleFilterId: string;
   muscleGroups: Reference[];
+  mode: ExerciseLibraryMode;
   onCreate: () => void;
   onRetry: () => void;
   onSearchChange: (value: string) => void;
@@ -325,13 +400,24 @@ function ExerciseList({
         search={search}
         totalExerciseCount={totalExerciseCount}
       />
+      {actionError ? <ActionError message={actionError} /> : null}
       <ExerciseResults
+        addingExerciseId={addingExerciseId}
         exercises={exercises}
         isLoading={isLoading}
+        isSelectionMode={mode === "add-to-workout"}
         onCreate={onCreate}
         onSelectExercise={onSelectExercise}
         totalExerciseCount={totalExerciseCount}
       />
+    </div>
+  );
+}
+
+function ActionError({ message }: { message: string }) {
+  return (
+    <div className="rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+      {message}
     </div>
   );
 }
@@ -406,14 +492,18 @@ function ExerciseListControls({
 }
 
 function ExerciseResults({
+  addingExerciseId,
   exercises,
   isLoading,
+  isSelectionMode,
   onCreate,
   onSelectExercise,
   totalExerciseCount,
 }: {
+  addingExerciseId: string | null;
   exercises: Exercise[];
   isLoading: boolean;
+  isSelectionMode: boolean;
   onCreate: () => void;
   onSelectExercise: (exercise: Exercise) => void;
   totalExerciseCount: number;
@@ -452,6 +542,9 @@ function ExerciseResults({
           {exercises.map((exercise) => (
             <ExerciseRow
               exercise={exercise}
+              isAdding={addingExerciseId === exercise.id}
+              isDisabled={addingExerciseId !== null}
+              isSelectionMode={isSelectionMode}
               key={exercise.id}
               onClick={() => onSelectExercise(exercise)}
             />
@@ -494,9 +587,15 @@ function FilterSelect({
 
 function ExerciseRow({
   exercise,
+  isAdding,
+  isDisabled,
+  isSelectionMode,
   onClick,
 }: {
   exercise: Exercise;
+  isAdding: boolean;
+  isDisabled: boolean;
+  isSelectionMode: boolean;
   onClick: () => void;
 }) {
   const secondaryText =
@@ -508,7 +607,8 @@ function ExerciseRow({
     <button
       type="button"
       onClick={onClick}
-      className="flex min-h-[74px] w-full items-center gap-3 rounded-2xl border border-white/[0.06] bg-[#181818] px-3.5 py-3 text-left transition hover:border-white/10 hover:bg-[#1e1e1e] active:scale-[0.99]"
+      disabled={isDisabled}
+      className="flex min-h-[74px] w-full items-center gap-3 rounded-2xl border border-white/[0.06] bg-[#181818] px-3.5 py-3 text-left transition hover:border-white/10 hover:bg-[#1e1e1e] active:scale-[0.99] disabled:cursor-wait disabled:opacity-70"
     >
       <ExerciseThumb name={exercise.primary_muscle_group.name} />
       <div className="min-w-0 flex-1">
@@ -520,7 +620,17 @@ function ExerciseRow({
           {secondaryText} · {exercise.equipment_type.name}
         </p>
       </div>
-      <ChevronIcon className="h-4 w-4 shrink-0 text-zinc-600" />
+      {isSelectionMode ? (
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-zinc-300">
+          {isAdding ? (
+            <span className="text-xs font-bold">...</span>
+          ) : (
+            <PlusIcon className="h-4 w-4" />
+          )}
+        </span>
+      ) : (
+        <ChevronIcon className="h-4 w-4 shrink-0 text-zinc-600" />
+      )}
     </button>
   );
 }
