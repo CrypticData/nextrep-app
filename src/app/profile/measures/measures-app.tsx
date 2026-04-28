@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { AppShell } from "../../app-shell";
+import { ConfirmSheet } from "../../confirm-sheet";
 
 type WeightUnit = "lbs" | "kg";
 
@@ -41,6 +42,8 @@ export function MeasuresApp() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [modalMode, setModalMode] = useState<ModalMode | null>(null);
   const [deletingRecordId, setDeletingRecordId] = useState<string | null>(null);
+  const [deleteRecordTarget, setDeleteRecordTarget] =
+    useState<BodyweightRecord | null>(null);
 
   const latestRecord = records[0] ?? null;
 
@@ -96,14 +99,6 @@ export function MeasuresApp() {
   }
 
   async function handleDeleteRecord(record: BodyweightRecord) {
-    const confirmed = window.confirm(
-      `Delete ${formatBodyweight(record)} from ${formatDate(record.measured_at)}?`,
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
     setDeletingRecordId(record.id);
     setActionError(null);
 
@@ -116,6 +111,7 @@ export function MeasuresApp() {
           (currentRecord) => currentRecord.id !== record.id,
         ),
       );
+      setDeleteRecordTarget(null);
     } catch (error) {
       setActionError(getErrorMessage(error));
     } finally {
@@ -156,7 +152,7 @@ export function MeasuresApp() {
           deletingRecordId={deletingRecordId}
           isLoading={isLoading}
           loadError={loadError}
-          onDelete={handleDeleteRecord}
+          onDelete={setDeleteRecordTarget}
           onEdit={(record) => setModalMode({ kind: "edit", record })}
           onRetry={() => void loadRecords()}
           records={records}
@@ -169,6 +165,24 @@ export function MeasuresApp() {
           onClose={() => setModalMode(null)}
           onSave={handleSaveRecord}
           weightUnit={settings?.weight_unit ?? "lbs"}
+        />
+      ) : null}
+
+      {deleteRecordTarget ? (
+        <ConfirmSheet
+          confirmLabel="Delete Record"
+          confirmingLabel="Deleting"
+          description={`This removes ${formatBodyweight(deleteRecordTarget)} from ${formatDate(deleteRecordTarget.measured_at)}.`}
+          error={actionError}
+          isConfirming={deletingRecordId === deleteRecordTarget.id}
+          onCancel={() => {
+            if (deletingRecordId !== deleteRecordTarget.id) {
+              setDeleteRecordTarget(null);
+              setActionError(null);
+            }
+          }}
+          onConfirm={() => void handleDeleteRecord(deleteRecordTarget)}
+          title="Delete this bodyweight record?"
         />
       ) : null}
     </AppShell>

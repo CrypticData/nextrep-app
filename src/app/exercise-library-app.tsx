@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   useCallback,
@@ -10,6 +11,7 @@ import {
 } from "react";
 import { useActiveWorkout } from "./active-workout-context";
 import { AppShell } from "./app-shell";
+import { ConfirmSheet } from "./confirm-sheet";
 
 type Reference = {
   id: string;
@@ -42,6 +44,42 @@ type ExerciseType =
   | "bodyweight_reps"
   | "weighted_bodyweight"
   | "assisted_bodyweight";
+
+type SetType = "normal" | "warmup" | "failure" | "drop";
+
+type ExerciseHistory = {
+  exercise_id: string;
+  exercise_type: ExerciseType;
+  display_weight_unit: "lbs" | "kg";
+  workouts: ExerciseHistoryWorkout[];
+};
+
+type ExerciseHistoryWorkout = {
+  id: string;
+  name: string;
+  started_at: string;
+  ended_at: string;
+  duration_seconds: number;
+  workout_url: string;
+  set_count: number;
+  sets: ExerciseHistorySet[];
+};
+
+type ExerciseHistorySet = {
+  id: string;
+  workout_session_exercise_id: string;
+  row_index: number;
+  set_number: number | null;
+  set_type: SetType;
+  weight: number | null;
+  weight_unit: "lbs" | "kg" | null;
+  bodyweight: number | null;
+  bodyweight_unit: "lbs" | "kg" | null;
+  reps: number;
+  rpe: number | null;
+  checked: boolean;
+  checked_at: string | null;
+};
 
 type ModalMode =
   | { kind: "create" }
@@ -80,6 +118,9 @@ export function ExerciseLibraryApp({
   const [deletingExerciseId, setDeletingExerciseId] = useState<string | null>(
     null,
   );
+  const [deleteExerciseTarget, setDeleteExerciseTarget] =
+    useState<Exercise | null>(null);
+  const [isExerciseActionsOpen, setIsExerciseActionsOpen] = useState(false);
   const [addingExerciseId, setAddingExerciseId] = useState<string | null>(null);
 
   const loadLibrary = useCallback(async () => {
@@ -210,7 +251,13 @@ export function ExerciseLibraryApp({
       return;
     }
 
+    setIsExerciseActionsOpen(false);
     setSelectedExerciseId(exercise.id);
+  }
+
+  function closeExerciseDetail() {
+    setIsExerciseActionsOpen(false);
+    setSelectedExerciseId(null);
   }
 
   function cancelAddToWorkout() {
@@ -219,14 +266,6 @@ export function ExerciseLibraryApp({
   }
 
   async function handleDeleteExercise(exercise: Exercise) {
-    const confirmed = window.confirm(
-      `Delete ${exercise.name}? This cannot be undone.`,
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
     setDeletingExerciseId(exercise.id);
     setActionError(null);
 
@@ -245,6 +284,7 @@ export function ExerciseLibraryApp({
         ),
       );
       setSelectedExerciseId(null);
+      setDeleteExerciseTarget(null);
     } catch (error) {
       setActionError(getErrorMessage(error));
     } finally {
@@ -255,37 +295,60 @@ export function ExerciseLibraryApp({
   return (
     <>
       <AppShell
-        backAction={isAddToWorkoutMode ? cancelAddToWorkout : undefined}
-        backHref={isAddToWorkoutMode ? undefined : "/profile"}
-        backLabel={
-          isAddToWorkoutMode ? "Cancel adding exercise" : "Back to profile"
+        backAction={
+          selectedExercise
+            ? closeExerciseDetail
+            : isAddToWorkoutMode
+              ? cancelAddToWorkout
+              : undefined
         }
-        backText={isAddToWorkoutMode ? "Cancel" : undefined}
+        backHref={isAddToWorkoutMode || selectedExercise ? undefined : "/profile"}
+        backLabel={
+          selectedExercise
+            ? "Back to exercises"
+            : isAddToWorkoutMode
+              ? "Cancel adding exercise"
+              : "Back to profile"
+        }
+        backText={isAddToWorkoutMode && !selectedExercise ? "Cancel" : undefined}
         mainClassName="px-5 pb-6 pt-0"
         subpage
-        title={isAddToWorkoutMode ? "Add Exercise" : "Exercises"}
+        title={
+          selectedExercise
+            ? selectedExercise.name
+            : isAddToWorkoutMode
+              ? "Add Exercise"
+              : "Exercises"
+        }
         action={
-          <button
-            type="button"
-            onClick={() => setModalMode({ kind: "create" })}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-950/50 transition active:scale-95 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
-            disabled={equipmentTypes.length === 0 || muscleGroups.length === 0}
-            aria-label="Create exercise"
-          >
-            <PlusIcon className="h-5 w-5" />
-          </button>
+          selectedExercise ? (
+            <button
+              type="button"
+              onClick={() => setIsExerciseActionsOpen(true)}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-white/[0.06] text-zinc-200 transition active:scale-95"
+              aria-label="Exercise actions"
+            >
+              <MoreIcon className="h-5 w-5" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setModalMode({ kind: "create" })}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-950/50 transition active:scale-95 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+              disabled={
+                equipmentTypes.length === 0 || muscleGroups.length === 0
+              }
+              aria-label="Create exercise"
+            >
+              <PlusIcon className="h-5 w-5" />
+            </button>
+          )
         }
       >
         {selectedExercise ? (
           <ExerciseDetail
             actionError={actionError}
-            deletingExerciseId={deletingExerciseId}
             exercise={selectedExercise}
-            onBack={() => setSelectedExerciseId(null)}
-            onDelete={handleDeleteExercise}
-            onEdit={() =>
-              setModalMode({ kind: "edit", exercise: selectedExercise })
-            }
           />
         ) : (
           <ExerciseList
@@ -318,6 +381,40 @@ export function ExerciseLibraryApp({
           muscleGroups={muscleGroups}
           onClose={() => setModalMode(null)}
           onSave={handleSaveExercise}
+        />
+      ) : null}
+
+      {isExerciseActionsOpen && selectedExercise ? (
+        <ExerciseActionsSheet
+          deletingExerciseId={deletingExerciseId}
+          exercise={selectedExercise}
+          onCancel={() => setIsExerciseActionsOpen(false)}
+          onDelete={() => {
+            setIsExerciseActionsOpen(false);
+            setDeleteExerciseTarget(selectedExercise);
+          }}
+          onEdit={() => {
+            setIsExerciseActionsOpen(false);
+            setModalMode({ kind: "edit", exercise: selectedExercise });
+          }}
+        />
+      ) : null}
+
+      {deleteExerciseTarget ? (
+        <ConfirmSheet
+          confirmLabel="Delete Exercise"
+          confirmingLabel="Deleting"
+          description="This cannot be undone."
+          error={actionError}
+          isConfirming={deletingExerciseId === deleteExerciseTarget.id}
+          onCancel={() => {
+            if (deletingExerciseId !== deleteExerciseTarget.id) {
+              setDeleteExerciseTarget(null);
+              setActionError(null);
+            }
+          }}
+          onConfirm={() => void handleDeleteExercise(deleteExerciseTarget)}
+          title={`Delete ${deleteExerciseTarget.name}?`}
         />
       ) : null}
     </>
@@ -671,83 +768,57 @@ function EmptyState({
 
 function ExerciseDetail({
   actionError,
-  deletingExerciseId,
   exercise,
-  onBack,
-  onDelete,
-  onEdit,
 }: {
   actionError: string | null;
-  deletingExerciseId: string | null;
   exercise: Exercise;
-  onBack: () => void;
-  onDelete: (exercise: Exercise) => void;
-  onEdit: () => void;
 }) {
-  const [showMenu, setShowMenu] = useState(false);
+  const [history, setHistory] = useState<ExerciseHistory | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(true);
+  const [historyReloadRequest, setHistoryReloadRequest] = useState(0);
   const secondaryText =
     exercise.secondary_muscle_groups.length > 0
       ? exercise.secondary_muscle_groups.map((muscle) => muscle.name).join(", ")
       : "None";
 
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    async function loadHistory() {
+      setIsHistoryLoading(true);
+      setHistoryError(null);
+
+      try {
+        const response = await fetch(`/api/exercises/${exercise.id}/history`, {
+          signal: abortController.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(await readErrorResponse(response));
+        }
+
+        const data = (await response.json()) as ExerciseHistory;
+
+        if (!abortController.signal.aborted) {
+          setHistory(data);
+          setIsHistoryLoading(false);
+        }
+      } catch (error) {
+        if (!abortController.signal.aborted) {
+          setHistoryError(getErrorMessage(error));
+          setIsHistoryLoading(false);
+        }
+      }
+    }
+
+    void loadHistory();
+
+    return () => abortController.abort();
+  }, [exercise.id, historyReloadRequest]);
+
   return (
     <div className="pt-4">
-      <div className="mb-5 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onBack}
-          className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-400 transition hover:bg-white/5 hover:text-white"
-          aria-label="Back to exercises"
-        >
-          <BackIcon className="h-4 w-4" />
-        </button>
-        <h2 className="min-w-0 flex-1 truncate text-center text-lg font-semibold text-white">
-          {exercise.name}
-        </h2>
-        <button
-          type="button"
-          onClick={onEdit}
-          className="flex h-9 items-center gap-1.5 rounded-full bg-white/[0.08] px-3 text-sm font-semibold text-zinc-200 transition hover:bg-white/[0.12]"
-        >
-          <EditIcon className="h-4 w-4" />
-          Edit
-        </button>
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setShowMenu((current) => !current)}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-400 transition hover:bg-white/5 hover:text-white"
-            aria-label="Exercise actions"
-          >
-            <MoreIcon className="h-5 w-5" />
-          </button>
-          {showMenu ? (
-            <>
-              <button
-                type="button"
-                aria-label="Close actions"
-                className="fixed inset-0 z-10 cursor-default"
-                onClick={() => setShowMenu(false)}
-              />
-              <div className="absolute right-0 top-11 z-20 min-w-44 overflow-hidden rounded-2xl border border-white/10 bg-[#242424] shadow-2xl shadow-black/60">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowMenu(false);
-                    onDelete(exercise);
-                  }}
-                  disabled={deletingExerciseId === exercise.id}
-                  className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-semibold text-red-300 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:text-red-300/50"
-                >
-                  <TrashIcon className="h-4 w-4" />
-                  {deletingExerciseId === exercise.id ? "Deleting" : "Delete"}
-                </button>
-              </div>
-            </>
-          ) : null}
-        </div>
-      </div>
-
       {actionError ? (
         <div className="mb-4 rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
           {actionError}
@@ -794,11 +865,230 @@ function ExerciseDetail({
         </button>
       </div>
 
+      <ExerciseHistoryPanel
+        exerciseType={exercise.exercise_type}
+        history={history}
+        isLoading={isHistoryLoading}
+        loadError={historyError}
+        onRetry={() => {
+          setHistory(null);
+          setHistoryReloadRequest((request) => request + 1);
+        }}
+      />
+    </div>
+  );
+}
+
+function ExerciseHistoryPanel({
+  exerciseType,
+  history,
+  isLoading,
+  loadError,
+  onRetry,
+}: {
+  exerciseType: ExerciseType;
+  history: ExerciseHistory | null;
+  isLoading: boolean;
+  loadError: string | null;
+  onRetry: () => void;
+}) {
+  if (isLoading) {
+    return (
+      <div className="mt-4 space-y-3">
+        {[0, 1].map((item) => (
+          <div
+            className="h-32 animate-pulse rounded-2xl bg-white/[0.04]"
+            key={item}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="mt-4 rounded-2xl border border-red-400/20 bg-red-500/[0.06] px-5 py-4">
+        <p className="text-sm font-semibold text-red-100">
+          History could not load.
+        </p>
+        <p className="mt-1 text-sm text-red-100/70">{loadError}</p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-4 rounded-xl bg-red-100 px-4 py-2 text-sm font-semibold text-red-950 transition active:scale-[0.98]"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (!history || history.workouts.length === 0) {
+    return (
       <div className="mt-4 rounded-3xl border border-white/[0.06] bg-white/[0.03] px-5 py-8 text-center">
         <p className="text-sm font-medium text-zinc-400">
           No workout history yet.
         </p>
       </div>
+    );
+  }
+
+  return (
+    <div className="mt-4 space-y-3 pb-24">
+      {history.workouts.map((workout) => (
+        <ExerciseHistoryWorkoutCard
+          exerciseType={exerciseType}
+          key={workout.id}
+          workout={workout}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ExerciseHistoryWorkoutCard({
+  exerciseType,
+  workout,
+}: {
+  exerciseType: ExerciseType;
+  workout: ExerciseHistoryWorkout;
+}) {
+  return (
+    <article className="rounded-2xl border border-white/[0.08] bg-[#181818] p-4">
+      <Link
+        href={workout.workout_url}
+        className="flex items-start justify-between gap-3 transition active:scale-[0.99]"
+      >
+        <div className="min-w-0">
+          <h3 className="truncate text-base font-semibold text-white">
+            {workout.name}
+          </h3>
+          <p className="mt-1 text-xs font-medium text-zinc-500">
+            {formatHistoryDate(workout.ended_at)} ·{" "}
+            {formatDuration(workout.duration_seconds)}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2 text-zinc-500">
+          <span className="rounded-full bg-white/[0.06] px-3 py-1 text-xs font-semibold text-zinc-300">
+            {formatSetCount(workout.set_count)}
+          </span>
+          <ChevronIcon className="h-4 w-4" />
+        </div>
+      </Link>
+
+      <div className="mt-4 space-y-2">
+        {workout.sets.map((set) => (
+          <ExerciseHistorySetRow
+            exerciseType={exerciseType}
+            key={set.id}
+            set={set}
+          />
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function ExerciseHistorySetRow({
+  exerciseType,
+  set,
+}: {
+  exerciseType: ExerciseType;
+  set: ExerciseHistorySet;
+}) {
+  return (
+    <div className="grid min-h-14 grid-cols-[44px_1fr_58px_52px] items-center gap-2 rounded-xl bg-white/[0.035] px-3 py-2">
+      <div>
+        <p className={`text-sm font-bold ${getSetLabelClassName(set.set_type)}`}>
+          {formatSetLabel(set)}
+        </p>
+        {set.set_type === "normal" ? null : (
+          <p className="mt-0.5 text-[10px] font-semibold uppercase text-zinc-500">
+            {formatSetType(set.set_type)}
+          </p>
+        )}
+      </div>
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold text-zinc-100">
+          {formatHistoryLoad(set, exerciseType)}
+        </p>
+        {set.bodyweight !== null && set.bodyweight_unit ? (
+          <p className="mt-0.5 text-xs font-medium text-zinc-500">
+            BW {formatDecimal(set.bodyweight)} {set.bodyweight_unit}
+          </p>
+        ) : (
+          <p className="mt-0.5 text-xs font-medium text-zinc-500">
+            row {set.row_index}
+          </p>
+        )}
+      </div>
+      <div className="text-right">
+        <p className="text-sm font-semibold text-white">{set.reps}</p>
+        <p className="mt-0.5 text-[10px] font-semibold uppercase text-zinc-500">
+          reps
+        </p>
+      </div>
+      <div className="text-right">
+        <p className="text-sm font-semibold text-zinc-200">
+          {set.rpe === null ? "-" : formatDecimal(set.rpe)}
+        </p>
+        <p className="mt-0.5 text-[10px] font-semibold uppercase text-zinc-500">
+          RPE
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ExerciseActionsSheet({
+  deletingExerciseId,
+  exercise,
+  onCancel,
+  onDelete,
+  onEdit,
+}: {
+  deletingExerciseId: string | null;
+  exercise: Exercise;
+  onCancel: () => void;
+  onDelete: () => void;
+  onEdit: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60">
+      <button
+        type="button"
+        aria-label="Close exercise actions"
+        className="absolute inset-0 cursor-default"
+        onClick={onCancel}
+      />
+      <section className="confirm-sheet-in relative w-full max-w-md rounded-t-3xl border border-white/10 bg-[#141414] px-5 pb-5 shadow-2xl shadow-black">
+        <div className="flex justify-center py-3">
+          <div className="h-1 w-9 rounded-full bg-white/15" />
+        </div>
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={onEdit}
+            className="flex h-14 w-full items-center gap-3 rounded-2xl bg-white/[0.06] px-4 text-left text-base font-bold text-white transition active:scale-[0.99]"
+          >
+            <EditIcon className="h-5 w-5 text-zinc-300" />
+            <span>Edit exercise</span>
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={deletingExerciseId === exercise.id}
+            className="flex h-14 w-full items-center gap-3 rounded-2xl bg-red-500/10 px-4 text-left text-base font-bold text-red-300 ring-1 ring-red-500/20 transition active:scale-[0.99] disabled:cursor-not-allowed disabled:text-red-300/50"
+          >
+            <TrashIcon className="h-5 w-5" />
+            <span>
+              {deletingExerciseId === exercise.id
+                ? "Deleting exercise"
+                : "Delete exercise"}
+            </span>
+          </button>
+        </div>
+      </section>
     </div>
   );
 }
@@ -1225,6 +1515,122 @@ function getExerciseTypeOption(exerciseType: ExerciseType) {
   );
 }
 
+function formatHistoryLoad(
+  set: ExerciseHistorySet,
+  exerciseType: ExerciseType,
+) {
+  if (set.weight !== null && set.weight_unit) {
+    const prefix = exerciseType === "assisted_bodyweight" ? "Assist " : "";
+    return `${prefix}${formatDecimal(set.weight)} ${set.weight_unit}`;
+  }
+
+  if (exerciseType === "bodyweight_reps") {
+    return "Bodyweight";
+  }
+
+  if (
+    exerciseType === "weighted_bodyweight" ||
+    exerciseType === "assisted_bodyweight"
+  ) {
+    return "No external load";
+  }
+
+  return "No weight";
+}
+
+function formatSetLabel(set: ExerciseHistorySet) {
+  if (set.set_type === "warmup") {
+    return "W";
+  }
+
+  if (set.set_type === "failure") {
+    return "F";
+  }
+
+  if (set.set_type === "drop") {
+    return "D";
+  }
+
+  return set.set_number?.toString() ?? set.row_index.toString();
+}
+
+function formatSetType(setType: SetType) {
+  if (setType === "warmup") {
+    return "Warmup";
+  }
+
+  if (setType === "failure") {
+    return "Failure";
+  }
+
+  if (setType === "drop") {
+    return "Drop";
+  }
+
+  return "Set";
+}
+
+function getSetLabelClassName(setType: SetType) {
+  if (setType === "warmup") {
+    return "text-amber-300";
+  }
+
+  if (setType === "failure") {
+    return "text-red-400";
+  }
+
+  if (setType === "drop") {
+    return "text-sky-400";
+  }
+
+  return "text-white";
+}
+
+function formatHistoryDate(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatDuration(totalSeconds: number) {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+  if (hours > 0 && minutes > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+
+  if (hours > 0) {
+    return `${hours}h`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}m`;
+  }
+
+  return `${Math.max(0, totalSeconds)}s`;
+}
+
+function formatDecimal(value: number) {
+  if (!Number.isFinite(value)) {
+    return "0";
+  }
+
+  return Number.isInteger(value) ? value.toString() : value.toFixed(2);
+}
+
+function formatSetCount(count: number) {
+  return `${count} ${count === 1 ? "set" : "sets"}`;
+}
+
 function sortExercises(exercises: Exercise[]) {
   return [...exercises].sort((first, second) =>
     first.name.localeCompare(second.name, undefined, { sensitivity: "base" }),
@@ -1302,25 +1708,6 @@ function ChevronIcon({ className }: IconProps) {
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeWidth="2"
-      />
-    </svg>
-  );
-}
-
-function BackIcon({ className }: IconProps) {
-  return (
-    <svg
-      className={className}
-      fill="none"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-    >
-      <path
-        d="m15 19-7-7 7-7"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="2.2"
       />
     </svg>
   );
