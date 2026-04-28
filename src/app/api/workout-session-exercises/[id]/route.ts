@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { isUuid } from "@/lib/exercise-api";
 import {
+  parseWorkoutExerciseNotesBody,
   removeExerciseFromActiveWorkout,
   toWorkoutSessionExerciseResponse,
+  updateActiveWorkoutExerciseNotes,
 } from "@/lib/workout-exercise-api";
 
 export const dynamic = "force-dynamic";
@@ -47,5 +49,47 @@ export async function DELETE(
 
   return NextResponse.json(
     result.workoutExercises.map(toWorkoutSessionExerciseResponse),
+  );
+}
+
+export async function PATCH(
+  request: Request,
+  context: WorkoutExerciseRouteContext,
+) {
+  const workoutExerciseId = await getWorkoutExerciseId(context);
+
+  if (!isUuid(workoutExerciseId)) {
+    return badRequest("Workout exercise id must be a valid UUID.");
+  }
+
+  let body: unknown;
+
+  try {
+    body = await request.json();
+  } catch {
+    return badRequest("Request body must be valid JSON.");
+  }
+
+  const parsedNotes = parseWorkoutExerciseNotesBody(body);
+
+  if (!parsedNotes) {
+    return badRequest("Request body must be an object.");
+  }
+
+  if (!parsedNotes.ok) {
+    return badRequest(parsedNotes.message);
+  }
+
+  const result = await updateActiveWorkoutExerciseNotes(
+    workoutExerciseId,
+    parsedNotes.notes,
+  );
+
+  if (result.kind === "workout_exercise_not_found") {
+    return notFound();
+  }
+
+  return NextResponse.json(
+    toWorkoutSessionExerciseResponse(result.workoutExercise),
   );
 }

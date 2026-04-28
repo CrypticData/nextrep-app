@@ -110,6 +110,33 @@ export function parseWorkoutExerciseWeightUnitBody(value: unknown) {
   return readWeightUnit((value as Record<string, unknown>).weight_unit);
 }
 
+export function parseWorkoutExerciseNotesBody(value: unknown) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+
+  const notes = (value as Record<string, unknown>).notes;
+
+  if (notes === null) {
+    return { ok: true as const, notes: null };
+  }
+
+  if (typeof notes !== "string") {
+    return { ok: false as const, message: "notes must be a string or null." };
+  }
+
+  const trimmedNotes = notes.trim();
+
+  if (trimmedNotes.length > 2000) {
+    return {
+      ok: false as const,
+      message: "notes must be 2000 characters or fewer.",
+    };
+  }
+
+  return { ok: true as const, notes: trimmedNotes || null };
+}
+
 export function toWorkoutSessionExerciseResponse(
   workoutExercise: SelectedWorkoutSessionExercise,
 ): WorkoutSessionExerciseResponse {
@@ -273,6 +300,35 @@ export async function updateWorkoutExerciseWeightUnit(
 
     return { kind: "ok" as const, workoutExercise: updatedWorkoutExercise };
   });
+}
+
+export async function updateActiveWorkoutExerciseNotes(
+  workoutExerciseId: string,
+  notes: string | null,
+) {
+  const workoutExercise = await prisma.workoutSessionExercise.findUnique({
+    where: { id: workoutExerciseId },
+    select: {
+      id: true,
+      workoutSession: {
+        select: {
+          status: true,
+        },
+      },
+    },
+  });
+
+  if (!workoutExercise || workoutExercise.workoutSession.status !== "active") {
+    return { kind: "workout_exercise_not_found" as const };
+  }
+
+  const updatedWorkoutExercise = await prisma.workoutSessionExercise.update({
+    where: { id: workoutExerciseId },
+    data: { notes },
+    select: workoutSessionExerciseSelect,
+  });
+
+  return { kind: "ok" as const, workoutExercise: updatedWorkoutExercise };
 }
 
 export async function removeExerciseFromActiveWorkout(

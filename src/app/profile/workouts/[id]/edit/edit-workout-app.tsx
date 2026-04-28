@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { AppShell } from "@/app/app-shell";
 import { ConfirmSheet } from "@/app/confirm-sheet";
@@ -565,10 +565,6 @@ function EditableExerciseCard({
     updater: (exercise: DraftWorkoutExercise) => DraftWorkoutExercise,
   ) => void;
 }) {
-  const recordedSetCount = exercise.sets.filter(
-    (set) => parseNullableInteger(set.repsValue) !== null && Number(set.repsValue) >= 1,
-  ).length;
-
   return (
     <section className="-mx-1 rounded-[24px] border border-white/[0.08] bg-[#141414] py-4">
       <div className="flex items-start justify-between gap-3 px-4">
@@ -576,30 +572,19 @@ function EditableExerciseCard({
           <h2 className="truncate text-lg font-semibold text-white">
             {exercise.exerciseNameSnapshot}
           </h2>
-          <p className="mt-1 truncate text-sm text-zinc-500">
-            {compactLabels([
-              exercise.primaryMuscleGroupNameSnapshot,
-              exercise.equipmentNameSnapshot,
-            ])}
-          </p>
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          <button
-            type="button"
-            onClick={onRemoveExercise}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-500 transition active:scale-95 active:bg-white/[0.06]"
-            aria-label="Remove exercise"
-          >
-            <TrashIcon className="h-5 w-5" />
-          </button>
-          <span className="text-xs font-semibold text-zinc-500">
-            {recordedSetCount}/{exercise.sets.length} recorded
-          </span>
-        </div>
+        <button
+          type="button"
+          onClick={onRemoveExercise}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-zinc-500 transition active:scale-95 active:bg-white/[0.06]"
+          aria-label="Remove exercise"
+        >
+          <TrashIcon className="h-5 w-5" />
+        </button>
       </div>
 
-      <div className="mt-4 px-4">
-        <textarea
+      <div className="mt-3 px-4">
+        <AutosizeNotesTextarea
           value={exercise.notes}
           onChange={(event) =>
             onUpdate((currentExercise) => ({
@@ -607,9 +592,7 @@ function EditableExerciseCard({
               notes: event.target.value,
             }))
           }
-          rows={2}
-          className="w-full resize-none rounded-2xl border border-white/10 bg-[#101010] px-4 py-3 text-sm font-medium leading-5 text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-300/40"
-          placeholder="Exercise notes"
+          placeholder="Notes"
         />
       </div>
 
@@ -667,6 +650,41 @@ function EditableExerciseCard({
         </button>
       </div>
     </section>
+  );
+}
+
+function AutosizeNotesTextarea({
+  onChange,
+  placeholder,
+  value,
+}: {
+  onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  placeholder: string;
+  value: string;
+}) {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+
+    if (!textarea) {
+      return;
+    }
+
+    textarea.style.height = "0px";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [value]);
+
+  return (
+    <textarea
+      ref={textareaRef}
+      value={value}
+      onChange={onChange}
+      rows={1}
+      maxLength={2000}
+      className="max-h-40 min-h-9 w-full resize-none overflow-hidden rounded-xl border border-white/10 bg-[#101010] px-3 py-2 text-sm font-medium leading-5 text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-300/40"
+      placeholder={placeholder}
+    />
   );
 }
 
@@ -1648,12 +1666,6 @@ function sortExercises(exercises: Exercise[]) {
   return [...exercises].sort((first, second) => {
     return first.name.localeCompare(second.name);
   });
-}
-
-function compactLabels(labels: Array<string | null>) {
-  const compacted = labels.filter((label): label is string => Boolean(label));
-
-  return compacted.length > 0 ? compacted.join(" / ") : "Exercise";
 }
 
 function normalizeNullableText(value: string) {

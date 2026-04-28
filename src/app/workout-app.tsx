@@ -444,6 +444,9 @@ function LiveWorkout({
   const [isDiscardingInvalidRows, setIsDiscardingInvalidRows] = useState(false);
   const hasAutoFinishedAtLimitRef = useRef(false);
   const finishWorkoutRef = useRef<() => void>(() => {});
+  const latestExerciseNotesRef = useRef<Map<string, string>>(new Map());
+  const noteSavePromisesRef = useRef<Map<string, Promise<void>>>(new Map());
+  const noteSaveTimersRef = useRef<Map<string, number>>(new Map());
 
   const loadWorkoutExercises = useCallback(async () => {
     setIsLoadingWorkoutExercises(true);
@@ -487,6 +490,17 @@ function LiveWorkout({
 
     return () => window.clearTimeout(timeout);
   }, [loadWorkoutExercises]);
+
+  useEffect(() => {
+    const noteSaveTimers = noteSaveTimersRef.current;
+
+    return () => {
+      for (const timeoutId of noteSaveTimers.values()) {
+        window.clearTimeout(timeoutId);
+      }
+      noteSaveTimers.clear();
+    };
+  }, []);
 
   const filteredExerciseLibrary = useMemo(() => {
     const normalizedSearch = exerciseSearch.trim().toLowerCase();
@@ -699,6 +713,114 @@ function LiveWorkout({
     }
   }
 
+  const persistWorkoutExerciseNotes = useCallback(async (
+    workoutExerciseId: string,
+    notes: string,
+  ) => {
+    setSetEditError(null);
+
+    try {
+      const updatedWorkoutExercise = await fetchJson<WorkoutSessionExercise>(
+        `/api/workout-session-exercises/${workoutExerciseId}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ notes: notes.trim() || null }),
+        },
+      );
+
+      setWorkoutExercises((currentExercises) =>
+        sortWorkoutExercises(
+          currentExercises.map((workoutExercise) =>
+            workoutExercise.id === workoutExerciseId
+              ? latestExerciseNotesRef.current.get(workoutExerciseId) === notes
+                ? updatedWorkoutExercise
+                : workoutExercise
+              : workoutExercise,
+          ),
+        ),
+      );
+    } catch (error) {
+      setSetEditError(getErrorMessage(error));
+    }
+  }, []);
+
+  const saveWorkoutExerciseNotes = useCallback((
+    workoutExerciseId: string,
+    notes: string,
+  ) => {
+    const normalizedNotes = notes.trim();
+    const existingTimeoutId = noteSaveTimersRef.current.get(workoutExerciseId);
+
+    if (existingTimeoutId) {
+      window.clearTimeout(existingTimeoutId);
+      noteSaveTimersRef.current.delete(workoutExerciseId);
+    }
+
+    const savePromise = persistWorkoutExerciseNotes(
+      workoutExerciseId,
+      normalizedNotes,
+    ).finally(() => {
+      if (noteSavePromisesRef.current.get(workoutExerciseId) === savePromise) {
+        noteSavePromisesRef.current.delete(workoutExerciseId);
+      }
+    });
+
+    noteSavePromisesRef.current.set(workoutExerciseId, savePromise);
+
+    return savePromise;
+  }, [persistWorkoutExerciseNotes]);
+
+  const flushPendingExerciseNotes = useCallback(async () => {
+    const immediateSaves: Promise<void>[] = [];
+
+    for (const [workoutExerciseId, timeoutId] of noteSaveTimersRef.current) {
+      window.clearTimeout(timeoutId);
+      noteSaveTimersRef.current.delete(workoutExerciseId);
+      immediateSaves.push(
+        saveWorkoutExerciseNotes(
+          workoutExerciseId,
+          latestExerciseNotesRef.current.get(workoutExerciseId) ?? "",
+        ),
+      );
+    }
+
+    await Promise.all([
+      ...immediateSaves,
+      ...noteSavePromisesRef.current.values(),
+    ]);
+  }, [saveWorkoutExerciseNotes]);
+
+  function handleChangeWorkoutExerciseNotes(
+    workoutExerciseId: string,
+    notes: string,
+  ) {
+    latestExerciseNotesRef.current.set(workoutExerciseId, notes);
+
+    setWorkoutExercises((currentExercises) =>
+      currentExercises.map((workoutExercise) =>
+        workoutExercise.id === workoutExerciseId
+          ? { ...workoutExercise, notes }
+          : workoutExercise,
+      ),
+    );
+
+    const existingTimeoutId = noteSaveTimersRef.current.get(workoutExerciseId);
+
+    if (existingTimeoutId) {
+      window.clearTimeout(existingTimeoutId);
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      noteSaveTimersRef.current.delete(workoutExerciseId);
+      void saveWorkoutExerciseNotes(workoutExerciseId, notes);
+    }, 500);
+
+    noteSaveTimersRef.current.set(workoutExerciseId, timeoutId);
+  }
+
   async function handleRemoveWorkoutExercise(
     workoutExercise: WorkoutSessionExercise,
   ) {
@@ -757,6 +879,8 @@ function LiveWorkout({
   const validateAndFinishWorkout = useCallback(async (
     exercisesForSummary = workoutExercises,
   ) => {
+    await flushPendingExerciseNotes();
+
     const validation = await fetchJson<FinishValidationResponse>(
       `/api/workout-sessions/${session.id}/finish/validate`,
       { method: "POST" },
@@ -786,7 +910,14 @@ function LiveWorkout({
         ? "You haven't added any exercises yet. Add an exercise and log a set to finish this workout."
         : "You haven't logged any sets yet. Record at least one set with reps to finish this workout.",
     );
-  }, [clear, offsetMs, onReadyToSave, session, workoutExercises]);
+  }, [
+    clear,
+    flushPendingExerciseNotes,
+    offsetMs,
+    onReadyToSave,
+    session,
+    workoutExercises,
+  ]);
 
   const handleFinishWorkout = useCallback(async () => {
     setIsFinishing(true);
@@ -880,6 +1011,12 @@ function LiveWorkout({
                     workoutExercise.id,
                     weightUnit,
                   )
+                }
+                onUpdateNotes={(notes) =>
+                  saveWorkoutExerciseNotes(workoutExercise.id, notes)
+                }
+                onNotesChange={(notes) =>
+                  handleChangeWorkoutExerciseNotes(workoutExercise.id, notes)
                 }
                 onUpdateSet={(setId, patch) =>
                   handleUpdateSet(workoutExercise.id, setId, patch)
@@ -1279,7 +1416,9 @@ function WorkoutExerciseCard({
   onAddSet,
   onDeleteSet,
   onRemoveExercise,
+  onNotesChange,
   onUpdateExerciseUnit,
+  onUpdateNotes,
   onUpdateSet,
   sessionDefaultWeightUnit,
   workoutExercise,
@@ -1292,15 +1431,14 @@ function WorkoutExerciseCard({
   onAddSet: () => void;
   onDeleteSet: (setId: string) => void;
   onRemoveExercise: () => void;
+  onNotesChange: (notes: string) => void;
   onUpdateExerciseUnit: (weightUnit: "lbs" | "kg") => Promise<void>;
+  onUpdateNotes: (notes: string) => Promise<void>;
   onUpdateSet: (setId: string, patch: WorkoutSetPatch) => Promise<void>;
   sessionDefaultWeightUnit: "lbs" | "kg";
   workoutExercise: WorkoutSessionExercise;
 }) {
   const exerciseType = workoutExercise.exercise_type ?? "weight_reps";
-  const checkedSetCount = workoutExercise.sets.filter(
-    (set) => set.checked,
-  ).length;
   const [isUnitSheetOpen, setIsUnitSheetOpen] = useState(false);
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
   const activeWeightUnit =
@@ -1315,6 +1453,10 @@ function WorkoutExerciseCard({
     }
   }
 
+  async function commitNotes() {
+    await onUpdateNotes(workoutExercise.notes ?? "");
+  }
+
   return (
     <section className="-mx-5 border-y border-white/[0.07] bg-[#101010] py-4">
       <div className="flex items-start justify-between gap-3 px-5">
@@ -1322,34 +1464,30 @@ function WorkoutExerciseCard({
           <h2 className="truncate text-lg font-semibold text-white">
             {workoutExercise.exercise_name_snapshot}
           </h2>
-          <p className="mt-1 truncate text-sm text-zinc-500">
-            {compactLabels([
-              workoutExercise.primary_muscle_group_name_snapshot,
-              workoutExercise.equipment_name_snapshot,
-            ])}
-          </p>
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1">
-          <div className="flex items-center gap-1.5">
-            <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-xs font-bold text-zinc-300">
-              #{workoutExercise.order_index + 1}
-            </span>
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setIsActionSheetOpen(true)}
-                disabled={isRemoving}
-                className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200 active:scale-95 disabled:cursor-wait disabled:opacity-50"
-                aria-label="Workout exercise actions"
-              >
-                <MoreIcon className="h-5 w-5" />
-              </button>
-            </div>
-          </div>
-          <span className="text-xs font-semibold text-zinc-500">
-            {checkedSetCount}/{workoutExercise.sets.length} done
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-xs font-bold text-zinc-300">
+            #{workoutExercise.order_index + 1}
           </span>
+          <button
+            type="button"
+            onClick={() => setIsActionSheetOpen(true)}
+            disabled={isRemoving}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200 active:scale-95 disabled:cursor-wait disabled:opacity-50"
+            aria-label="Workout exercise actions"
+          >
+            <MoreIcon className="h-5 w-5" />
+          </button>
         </div>
+      </div>
+
+      <div className="mt-3 px-5">
+        <AutosizeNotesTextarea
+          value={workoutExercise.notes ?? ""}
+          onBlur={() => void commitNotes()}
+          onChange={(event) => onNotesChange(event.target.value)}
+          placeholder="Notes"
+        />
       </div>
 
       <div className="mt-5">
@@ -1429,6 +1567,46 @@ function WorkoutExerciseCard({
         />
       ) : null}
     </section>
+  );
+}
+
+function AutosizeNotesTextarea({
+  className = "bg-[#181818]",
+  onBlur,
+  onChange,
+  placeholder,
+  value,
+}: {
+  className?: string;
+  onBlur?: () => void;
+  onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  placeholder: string;
+  value: string;
+}) {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+
+    if (!textarea) {
+      return;
+    }
+
+    textarea.style.height = "0px";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [value]);
+
+  return (
+    <textarea
+      ref={textareaRef}
+      value={value}
+      onBlur={onBlur}
+      onChange={onChange}
+      rows={1}
+      maxLength={2000}
+      className={`max-h-40 min-h-9 w-full resize-none overflow-hidden rounded-xl border border-white/10 px-3 py-2 text-sm font-medium leading-5 text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-300/40 ${className}`}
+      placeholder={placeholder}
+    />
   );
 }
 
@@ -2300,12 +2478,6 @@ function sortExercises(exercises: Exercise[]) {
   return [...exercises].sort((first, second) => {
     return first.name.localeCompare(second.name);
   });
-}
-
-function compactLabels(labels: Array<string | null>) {
-  const compacted = labels.filter((label): label is string => Boolean(label));
-
-  return compacted.length > 0 ? compacted.join(" · ") : "Exercise";
 }
 
 function getWorkoutSummary(
