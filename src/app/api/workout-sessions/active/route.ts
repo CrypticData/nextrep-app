@@ -9,5 +9,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const session = await findActiveWorkoutSession();
 
-  return NextResponse.json(session ? toWorkoutSessionResponse(session) : null);
+  return NextResponse.json(
+    session ? await toWorkoutSessionResponse(session) : null,
+  );
 }

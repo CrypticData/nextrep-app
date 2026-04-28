@@ -26,12 +26,15 @@ type WorkoutSessionClient = Pick<
   "workoutSession"
 >;
 
+type WorkoutSessionResponseClient = Pick<Prisma.TransactionClient, "workoutSet">;
+
 export type WorkoutSessionResponse = {
   id: string;
   name: string | null;
   description: string | null;
   status: "active" | "completed";
   default_weight_unit: "lbs" | "kg";
+  current_exercise_name: string | null;
   started_at: string;
   ended_at: string | null;
   server_now: string;
@@ -50,21 +53,52 @@ export function isKnownPrismaError(error: unknown, code: string) {
   );
 }
 
-export function toWorkoutSessionResponse(
+export async function toWorkoutSessionResponse(
   session: SelectedWorkoutSession,
-): WorkoutSessionResponse {
+  db: WorkoutSessionResponseClient = prisma,
+): Promise<WorkoutSessionResponse> {
+  const currentExerciseName = await findCurrentExerciseName(session.id, db);
+
   return {
     id: session.id,
     name: session.name,
     description: session.description,
     status: session.status,
     default_weight_unit: session.defaultWeightUnit,
+    current_exercise_name: currentExerciseName,
     started_at: session.startedAt.toISOString(),
     ended_at: session.endedAt?.toISOString() ?? null,
     server_now: new Date().toISOString(),
     created_at: session.createdAt.toISOString(),
     updated_at: session.updatedAt.toISOString(),
   };
+}
+
+async function findCurrentExerciseName(
+  workoutSessionId: string,
+  db: WorkoutSessionResponseClient,
+) {
+  const checkedSet = await db.workoutSet.findFirst({
+    where: {
+      checked: true,
+      checkedAt: { not: null },
+      workoutSessionExercise: {
+        workoutSessionId,
+      },
+    },
+    orderBy: {
+      checkedAt: "desc",
+    },
+    select: {
+      workoutSessionExercise: {
+        select: {
+          exerciseNameSnapshot: true,
+        },
+      },
+    },
+  });
+
+  return checkedSet?.workoutSessionExercise.exerciseNameSnapshot ?? null;
 }
 
 export async function findActiveWorkoutSession(

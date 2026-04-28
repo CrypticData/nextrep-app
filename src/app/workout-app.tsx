@@ -2,22 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { useActiveWorkout } from "./active-workout-context";
+import type { ActiveWorkoutSession } from "./active-workout-context";
 import { AppShell } from "./app-shell";
+import { ConfirmSheet } from "./confirm-sheet";
 
-type WorkoutSession = {
-  id: string;
-  name: string | null;
-  description: string | null;
-  status: "active" | "completed";
-  default_weight_unit: "lbs" | "kg";
-  started_at: string;
-  ended_at: string | null;
-  server_now: string;
-  created_at: string;
-  updated_at: string;
-};
-
-type WorkoutScreen = "start" | "resume" | "live";
+type WorkoutScreen = "start" | "live";
+type WorkoutSession = ActiveWorkoutSession;
 
 type Reference = {
   id: string;
@@ -90,38 +81,36 @@ type WorkoutSetPatch = {
 };
 
 export function WorkoutApp() {
-  const [session, setSession] = useState<WorkoutSession | null>(null);
+  const {
+    clear,
+    error: activeWorkoutError,
+    isLoading,
+    openLiveRequest,
+    refresh,
+    session,
+    setSession,
+  } = useActiveWorkout();
   const [screen, setScreen] = useState<WorkoutScreen>("start");
-  const [isLoading, setIsLoading] = useState(true);
   const [isStarting, setIsStarting] = useState(false);
   const [isDiscarding, setIsDiscarding] = useState(false);
+  const [isDiscardSheetOpen, setIsDiscardSheetOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadActiveSession = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+  useEffect(() => {
+    if (openLiveRequest > 0 && session) {
+      const timeout = window.setTimeout(() => setScreen("live"), 0);
 
-    try {
-      const activeSession = await fetchJson<WorkoutSession | null>(
-        "/api/workout-sessions/active",
-      );
-
-      setSession(activeSession);
-      setScreen(activeSession ? "resume" : "start");
-    } catch (loadError) {
-      setError(getErrorMessage(loadError));
-    } finally {
-      setIsLoading(false);
+      return () => window.clearTimeout(timeout);
     }
-  }, []);
+  }, [openLiveRequest, session]);
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      void loadActiveSession();
-    }, 0);
+    if (!session && screen === "live") {
+      const timeout = window.setTimeout(() => setScreen("start"), 0);
 
-    return () => window.clearTimeout(timeout);
-  }, [loadActiveSession]);
+      return () => window.clearTimeout(timeout);
+    }
+  }, [screen, session]);
 
   async function handleStartWorkout() {
     setIsStarting(true);
@@ -147,14 +136,6 @@ export function WorkoutApp() {
       return;
     }
 
-    const confirmed = window.confirm(
-      "Discard this active workout? This deletes the empty workout session.",
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
     setIsDiscarding(true);
     setError(null);
 
@@ -168,7 +149,8 @@ export function WorkoutApp() {
         throw new Error(await readErrorResponse(response));
       }
 
-      setSession(null);
+      clear();
+      setIsDiscardSheetOpen(false);
       setScreen("start");
     } catch (discardError) {
       setError(getErrorMessage(discardError));
@@ -178,39 +160,61 @@ export function WorkoutApp() {
   }
 
   const isLiveScreen = screen === "live";
+  const blockingError = activeWorkoutError ?? error;
 
   return (
     <AppShell
+      hideFloatingCard={isLiveScreen}
       hideHeader={isLiveScreen}
       mainClassName={isLiveScreen ? "px-5 pb-6 pt-0" : undefined}
       title={isLiveScreen ? "Log Workout" : "Workout"}
     >
       {isLoading ? <WorkoutLoading /> : null}
 
-      {!isLoading && error ? (
-        <WorkoutError message={error} onRetry={() => void loadActiveSession()} />
+      {!isLoading && blockingError ? (
+        <WorkoutError message={blockingError} onRetry={() => void refresh()} />
       ) : null}
 
-      {!isLoading && !error && screen === "live" && session ? (
+      {!isLoading && !blockingError && screen === "live" && session ? (
         <LiveWorkout
           isDiscarding={isDiscarding}
-          onMinimize={() => setScreen("resume")}
-          onDiscard={handleDiscardWorkout}
+          onMinimize={() => setScreen("start")}
+          onDiscard={() => {
+            setError(null);
+            setIsDiscardSheetOpen(true);
+          }}
           session={session}
         />
       ) : null}
 
-      {!isLoading && !error && screen !== "live" && session ? (
-        <ResumeWorkout
-          onResume={() => setScreen("live")}
-          session={session}
-        />
-      ) : null}
-
-      {!isLoading && !error && screen === "start" && !session ? (
+      {!isLoading && !blockingError && screen === "start" ? (
         <StartWorkout
+          disabled={session !== null}
+          helperText={
+            session
+              ? "You have a workout in progress — tap the card below to resume."
+              : undefined
+          }
           isStarting={isStarting}
           onStart={() => void handleStartWorkout()}
+        />
+      ) : null}
+
+      {isDiscardSheetOpen ? (
+        <ConfirmSheet
+          confirmLabel="Discard Workout"
+          confirmingLabel="Discarding"
+          description="Your in-progress sets and exercises will be deleted."
+          error={error}
+          isConfirming={isDiscarding}
+          onCancel={() => {
+            if (!isDiscarding) {
+              setIsDiscardSheetOpen(false);
+              setError(null);
+            }
+          }}
+          onConfirm={() => void handleDiscardWorkout()}
+          title="Discard this active workout?"
         />
       ) : null}
     </AppShell>
@@ -256,9 +260,13 @@ function WorkoutError({
 }
 
 function StartWorkout({
+  disabled,
+  helperText,
   isStarting,
   onStart,
 }: {
+  disabled: boolean;
+  helperText?: string;
   isStarting: boolean;
   onStart: () => void;
 }) {
@@ -272,59 +280,17 @@ function StartWorkout({
           Ready to train?
         </h2>
         <p className="mt-2 text-sm leading-6 text-zinc-400">
-          Start a workout, then add exercises from your library as you train.
+          {helperText ??
+            "Start a workout, then add exercises from your library as you train."}
         </p>
         <button
           type="button"
           onClick={onStart}
-          disabled={isStarting}
+          disabled={disabled || isStarting}
           className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-4 text-base font-bold text-white shadow-lg shadow-emerald-950/50 transition active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
         >
           <PlayIcon className="h-5 w-5" />
           {isStarting ? "Starting" : "Start Empty Workout"}
-        </button>
-      </section>
-    </div>
-  );
-}
-
-function ResumeWorkout({
-  onResume,
-  session,
-}: {
-  onResume: () => void;
-  session: WorkoutSession;
-}) {
-  const elapsedSeconds = useElapsedSeconds(
-    session.started_at,
-    session.server_now,
-  );
-
-  return (
-    <div className="space-y-4">
-      <section className="rounded-3xl border border-emerald-400/20 bg-emerald-400/[0.06] p-5">
-        <p className="text-xs font-bold uppercase tracking-[0.14em] text-emerald-300">
-          Active workout
-        </p>
-        <div className="mt-4 flex items-end justify-between gap-4">
-          <div>
-            <p className="font-mono text-4xl font-semibold tracking-normal text-white">
-              {formatElapsed(elapsedSeconds)}
-            </p>
-            <p className="mt-1 text-sm text-zinc-400">
-              Started {formatStartedTime(session.started_at)}
-            </p>
-          </div>
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
-            <PlayIcon className="h-5 w-5" />
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={onResume}
-          className="mt-6 h-12 w-full rounded-2xl bg-white px-4 text-base font-bold text-black transition active:scale-[0.99]"
-        >
-          Resume Workout
         </button>
       </section>
     </div>
@@ -342,6 +308,7 @@ function LiveWorkout({
   onMinimize: () => void;
   session: WorkoutSession;
 }) {
+  const { refresh } = useActiveWorkout();
   const elapsedSeconds = useElapsedSeconds(
     session.started_at,
     session.server_now,
@@ -505,6 +472,10 @@ function LiveWorkout({
           };
         }),
       );
+
+      if (patch.checked !== undefined) {
+        void refresh({ suppressError: true });
+      }
     } catch (error) {
       setSetEditError(getErrorMessage(error));
     } finally {
@@ -1834,18 +1805,6 @@ function getElapsedSeconds(
   );
 }
 
-function formatElapsed(totalSeconds: number) {
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  return [
-    hours.toString(),
-    minutes.toString().padStart(2, "0"),
-    seconds.toString().padStart(2, "0"),
-  ].join(":");
-}
-
 function formatElapsedWords(totalSeconds: number) {
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -1860,13 +1819,6 @@ function formatElapsedWords(totalSeconds: number) {
   }
 
   return `${seconds}s`;
-}
-
-function formatStartedTime(startedAt: string) {
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(startedAt));
 }
 
 function sortWorkoutExercises(exercises: WorkoutSessionExercise[]) {

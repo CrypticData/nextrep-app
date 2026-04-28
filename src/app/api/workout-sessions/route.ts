@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export async function POST() {
   const { session, created } = await createOrReturnActiveWorkoutSession();
 
-  return NextResponse.json(toWorkoutSessionResponse(session), {
+  return NextResponse.json(await toWorkoutSessionResponse(session), {
     status: created ? 201 : 200,
   });
 }

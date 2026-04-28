@@ -3,12 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { ActiveWorkoutCard } from "./active-workout-card";
+import { useActiveWorkout } from "./active-workout-context";
 
 type AppShellProps = {
   action?: ReactNode;
   backHref?: string;
   backLabel?: string;
   children: ReactNode;
+  hideFloatingCard?: boolean;
   hideHeader?: boolean;
   mainClassName?: string;
   subpage?: boolean;
@@ -25,11 +28,19 @@ export function AppShell({
   backHref,
   backLabel = "Back",
   children,
+  hideFloatingCard = false,
   hideHeader = false,
   mainClassName = "px-5 pb-6 pt-4",
   subpage = false,
   title,
 }: AppShellProps) {
+  const pathname = usePathname();
+  const { session } = useActiveWorkout();
+  const showFloatingCard =
+    !hideFloatingCard &&
+    session !== null &&
+    (pathname === "/" || pathname === "/profile");
+
   return (
     <div className="h-dvh overflow-hidden bg-[#050505] text-zinc-50">
       <div className="mx-auto flex h-dvh w-full max-w-md flex-col overflow-hidden bg-[#101010] shadow-2xl shadow-black/40">
@@ -78,6 +89,8 @@ export function AppShell({
         <main className={`min-h-0 flex-1 overflow-y-auto ${mainClassName}`}>
           {children}
         </main>
+
+        {showFloatingCard ? <ActiveWorkoutCard session={session} /> : null}
 
         <BottomNav />
       </div>
