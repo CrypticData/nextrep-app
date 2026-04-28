@@ -36,6 +36,8 @@ import {
   formatRoundedDuration,
   toVisibleDurationParts,
 } from "@/lib/workout-duration";
+import { HttpError } from "@/lib/http-error";
+import { useSaveQueue } from "@/lib/save-queue";
 
 type WorkoutScreen = "start" | "live" | "save";
 type WorkoutSession = ActiveWorkoutSession;
@@ -91,6 +93,8 @@ type WorkoutSetPatch = {
   checked?: boolean;
   set_type?: WorkoutSet["set_type"];
 };
+
+type SetDirtyField = keyof WorkoutSetPatch;
 
 type FinishValidationResponse =
   | { can_continue: true }
@@ -419,42 +423,45 @@ function LiveWorkout({
   const [workoutExercises, setWorkoutExercises] = useState<
     WorkoutSessionExercise[]
   >([]);
+  const latestWorkoutExercisesRef = useRef<WorkoutSessionExercise[]>([]);
   const [isLoadingWorkoutExercises, setIsLoadingWorkoutExercises] =
     useState(true);
   const [workoutExercisesError, setWorkoutExercisesError] = useState<
     string | null
   >(null);
-  const [savingSetIds, setSavingSetIds] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const [deletingSetIds, setDeletingSetIds] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const [addingSetExerciseIds, setAddingSetExerciseIds] = useState<
-    Set<string>
-  >(() => new Set());
-  const [savingUnitExerciseIds, setSavingUnitExerciseIds] = useState<
-    Set<string>
-  >(() => new Set());
-  const [removingWorkoutExerciseIds, setRemovingWorkoutExerciseIds] = useState<
-    Set<string>
-  >(() => new Set());
+  const saveQueue = useSaveQueue();
+  const {
+    drop: dropSave,
+    enqueue: enqueueSave,
+    isBusy: isSaveQueueBusy,
+    retryAll: retryFailedSaves,
+    waitForKeys: waitForSaveKeys,
+  } = saveQueue;
+  const saveQueueState = saveQueue.state;
+  const activeSaveKeys = useMemo(() => {
+    return new Set([
+      ...saveQueueState.pending.keys(),
+      ...saveQueueState.inFlight.keys(),
+    ]);
+  }, [saveQueueState.inFlight, saveQueueState.pending]);
   const [setEditError, setSetEditError] = useState<string | null>(null);
-  const [reorderError, setReorderError] = useState<string | null>(null);
-  const [failedExerciseOrderIds, setFailedExerciseOrderIds] = useState<
-    string[] | null
-  >(null);
   const [finishError, setFinishError] = useState<string | null>(null);
+  const [syncBusyToast, setSyncBusyToast] = useState<string | null>(null);
+  const [debouncedNoteTimerCount, setDebouncedNoteTimerCount] = useState(0);
   const [isFinishing, setIsFinishing] = useState(false);
   const [isInvalidRowsSheetOpen, setIsInvalidRowsSheetOpen] = useState(false);
   const [invalidWeightedSetCount, setInvalidWeightedSetCount] = useState(0);
   const [isDiscardingInvalidRows, setIsDiscardingInvalidRows] = useState(false);
   const hasAutoFinishedAtLimitRef = useRef(false);
   const finishWorkoutRef = useRef<() => void>(() => {});
+  const dirtySetFieldVersionsRef = useRef<Map<string, Map<SetDirtyField, number>>>(
+    new Map(),
+  );
   const latestExerciseNotesRef = useRef<Map<string, string>>(new Map());
-  const noteSavePromisesRef = useRef<Map<string, Promise<void>>>(new Map());
   const noteSaveTimersRef = useRef<Map<string, number>>(new Map());
+  const exerciseNoteVersionsRef = useRef<Map<string, number>>(new Map());
   const exerciseOrderRequestRef = useRef(0);
+  const addSetNonceRef = useRef(0);
   const exerciseOrderIds = useMemo(
     () => workoutExercises.map((workoutExercise) => workoutExercise.id),
     [workoutExercises],
@@ -467,6 +474,44 @@ function LiveWorkout({
       coordinateGetter: sortableKeyboardCoordinates,
     }),
   );
+  const setWorkoutExercisesAndRef = useCallback((
+    updater:
+      | WorkoutSessionExercise[]
+      | ((currentExercises: WorkoutSessionExercise[]) => WorkoutSessionExercise[]),
+  ) => {
+    setWorkoutExercises((currentExercises) => {
+      const nextExercises =
+        typeof updater === "function" ? updater(currentExercises) : updater;
+
+      latestWorkoutExercisesRef.current = nextExercises;
+      return nextExercises;
+    });
+  }, []);
+  const isSyncBusy =
+    isSaveQueueBusy || debouncedNoteTimerCount > 0;
+
+  const showSyncBusyToast = useCallback(() => {
+    setSyncBusyToast("Wait for changes to save before finishing.");
+    window.setTimeout(() => setSyncBusyToast(null), 1800);
+  }, []);
+
+  const syncDebouncedNoteTimerCount = useCallback(() => {
+    setDebouncedNoteTimerCount(noteSaveTimersRef.current.size);
+  }, []);
+
+  function isQueueKeyActive(key: string) {
+    return activeSaveKeys.has(key);
+  }
+
+  function isQueuePrefixActive(prefix: string) {
+    for (const key of activeSaveKeys) {
+      if (key.startsWith(prefix)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
 
   const loadWorkoutExercises = useCallback(async () => {
     setIsLoadingWorkoutExercises(true);
@@ -478,7 +523,7 @@ function LiveWorkout({
       );
       const sortedWorkoutExercises = sortWorkoutExercises(workoutExerciseData);
 
-      setWorkoutExercises(sortedWorkoutExercises);
+      setWorkoutExercisesAndRef(sortedWorkoutExercises);
       return sortedWorkoutExercises;
     } catch (error) {
       setWorkoutExercisesError(getErrorMessage(error));
@@ -486,7 +531,7 @@ function LiveWorkout({
     } finally {
       setIsLoadingWorkoutExercises(false);
     }
-  }, [session.id]);
+  }, [session.id, setWorkoutExercisesAndRef]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -511,160 +556,269 @@ function LiveWorkout({
     router.push("/profile/exercises?mode=add-to-workout");
   }
 
+  function markSetDirty(setId: string, patch: WorkoutSetPatch) {
+    let fieldVersions = dirtySetFieldVersionsRef.current.get(setId);
+
+    if (!fieldVersions) {
+      fieldVersions = new Map();
+      dirtySetFieldVersionsRef.current.set(setId, fieldVersions);
+    }
+
+    for (const field of getSetPatchFields(patch)) {
+      fieldVersions.set(field, (fieldVersions.get(field) ?? 0) + 1);
+    }
+  }
+
+  function snapshotSetFieldVersions(setId: string, patch: WorkoutSetPatch) {
+    const currentVersions = dirtySetFieldVersionsRef.current.get(setId);
+    const sentVersions = new Map<SetDirtyField, number>();
+
+    if (!currentVersions) {
+      return sentVersions;
+    }
+
+    for (const field of getSetPatchFields(patch)) {
+      const version = currentVersions.get(field);
+
+      if (version !== undefined) {
+        sentVersions.set(field, version);
+      }
+    }
+
+    return sentVersions;
+  }
+
+  function clearResolvedSetFields(
+    setId: string,
+    sentVersions: Map<SetDirtyField, number>,
+  ) {
+    const currentVersions = dirtySetFieldVersionsRef.current.get(setId);
+
+    if (!currentVersions) {
+      return;
+    }
+
+    for (const [field, version] of sentVersions) {
+      if (currentVersions.get(field) === version) {
+        currentVersions.delete(field);
+      }
+    }
+
+    if (currentVersions.size === 0) {
+      dirtySetFieldVersionsRef.current.delete(setId);
+    }
+  }
+
+  function buildSetPatchFromLocalState(setId: string): WorkoutSetPatch {
+    for (const workoutExercise of latestWorkoutExercisesRef.current) {
+      const set = workoutExercise.sets.find((candidate) => {
+        return candidate.id === setId;
+      });
+
+      if (set) {
+        return getWorkoutSetPatch(set);
+      }
+    }
+
+    return {};
+  }
+
   async function handleUpdateSet(
     workoutExerciseId: string,
     setId: string,
     patch: WorkoutSetPatch,
   ) {
-    setSavingSetIds((currentIds) => new Set(currentIds).add(setId));
     setSetEditError(null);
     setFinishError(null);
 
-    try {
-      const updatedSets = await fetchJson<WorkoutSet[]>(`/api/sets/${setId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(patch),
-      });
+    markSetDirty(setId, patch);
+    setWorkoutExercisesAndRef((currentExercises) =>
+      currentExercises.map((workoutExercise) => {
+        if (workoutExercise.id !== workoutExerciseId) {
+          return workoutExercise;
+        }
 
-      setWorkoutExercises((currentExercises) =>
-        currentExercises.map((workoutExercise) => {
-          if (workoutExercise.id !== workoutExerciseId) {
-            return workoutExercise;
-          }
+        return {
+          ...workoutExercise,
+          input_weight_unit:
+            workoutExercise.exercise_type === "weight_reps" &&
+            patch.weight_input_unit
+              ? patch.weight_input_unit
+              : workoutExercise.input_weight_unit,
+          sets: workoutExercise.sets.map((set) =>
+            set.id === setId ? mergeWorkoutSetPatch(set, patch) : set,
+          ),
+        };
+      }),
+    );
 
-          return {
-            ...workoutExercise,
-            input_weight_unit:
-              workoutExercise.exercise_type === "weight_reps" &&
-              patch.weight_input_unit
-                ? patch.weight_input_unit
-                : workoutExercise.input_weight_unit,
-            sets: sortWorkoutSets(updatedSets),
-          };
-        }),
-      );
+    let sentVersions = new Map<SetDirtyField, number>();
 
-      if (patch.checked !== undefined) {
-        void refresh({ suppressError: true });
-      }
-    } catch (error) {
-      setSetEditError(getErrorMessage(error));
-    } finally {
-      setSavingSetIds((currentIds) => {
-        const nextIds = new Set(currentIds);
-        nextIds.delete(setId);
-        return nextIds;
-      });
-    }
+    enqueueSave({
+      key: getSetUpdateKey(setId),
+      describe: "set update",
+      run: async (signal) => {
+        const payload = buildSetPatchFromLocalState(setId);
+        sentVersions = snapshotSetFieldVersions(setId, payload);
+
+        return fetchJson<WorkoutSet[]>(`/api/sets/${setId}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+          signal,
+        });
+      },
+      onSuccess: (response) => {
+        const updatedSets = response as WorkoutSet[];
+
+        if (!hasLocalWorkoutSet(latestWorkoutExercisesRef.current, setId)) {
+          return;
+        }
+
+        clearResolvedSetFields(setId, sentVersions);
+        setWorkoutExercisesAndRef((currentExercises) =>
+          currentExercises.map((workoutExercise) => {
+            if (workoutExercise.id !== workoutExerciseId) {
+              return workoutExercise;
+            }
+
+            return {
+              ...workoutExercise,
+              sets: mergeServerWorkoutSets(
+                workoutExercise.sets,
+                sortWorkoutSets(updatedSets),
+                dirtySetFieldVersionsRef.current,
+              ),
+            };
+          }),
+        );
+
+        if (patch.checked !== undefined) {
+          void refresh({ suppressError: true });
+        }
+      },
+    });
   }
 
   async function handleAddSet(workoutExerciseId: string) {
-    setAddingSetExerciseIds((currentIds) =>
-      new Set(currentIds).add(workoutExerciseId),
-    );
     setSetEditError(null);
     setFinishError(null);
+    addSetNonceRef.current += 1;
+    const nonce = addSetNonceRef.current.toString();
 
-    try {
-      const createdSet = await fetchJson<WorkoutSet>(
-        `/api/workout-session-exercises/${workoutExerciseId}/sets`,
-        { method: "POST" },
-      );
-
-      setWorkoutExercises((currentExercises) =>
-        currentExercises.map((workoutExercise) =>
-          workoutExercise.id === workoutExerciseId
-            ? {
-                ...workoutExercise,
-                sets: sortWorkoutSets([...workoutExercise.sets, createdSet]),
-              }
-            : workoutExercise,
+    enqueueSave({
+      key: `${getSetAddKeyPrefix(workoutExerciseId)}${nonce}`,
+      describe: "add set",
+      run: (signal) =>
+        fetchJson<WorkoutSet>(
+          `/api/workout-session-exercises/${workoutExerciseId}/sets`,
+          { method: "POST", signal },
         ),
-      );
-    } catch (error) {
-      setSetEditError(getErrorMessage(error));
-    } finally {
-      setAddingSetExerciseIds((currentIds) => {
-        const nextIds = new Set(currentIds);
-        nextIds.delete(workoutExerciseId);
-        return nextIds;
-      });
-    }
+      onSuccess: (response) => {
+        const createdSet = response as WorkoutSet;
+
+        setWorkoutExercisesAndRef((currentExercises) =>
+          currentExercises.map((workoutExercise) =>
+            workoutExercise.id === workoutExerciseId
+              ? {
+                  ...workoutExercise,
+                  sets: sortWorkoutSets([...workoutExercise.sets, createdSet]),
+                }
+              : workoutExercise,
+          ),
+        );
+      },
+    });
   }
 
   async function handleDeleteSet(workoutExerciseId: string, setId: string) {
-    setDeletingSetIds((currentIds) => new Set(currentIds).add(setId));
     setSetEditError(null);
     setFinishError(null);
 
-    try {
-      const updatedSets = await fetchJson<WorkoutSet[]>(`/api/sets/${setId}`, {
-        method: "DELETE",
-      });
+    dropSave(getSetUpdateKey(setId));
+    setWorkoutExercisesAndRef((currentExercises) =>
+      currentExercises.map((workoutExercise) =>
+        workoutExercise.id === workoutExerciseId
+          ? {
+              ...workoutExercise,
+              sets: workoutExercise.sets.filter((set) => set.id !== setId),
+            }
+          : workoutExercise,
+      ),
+    );
 
-      setWorkoutExercises((currentExercises) =>
-        currentExercises.map((workoutExercise) =>
-          workoutExercise.id === workoutExerciseId
-            ? {
-                ...workoutExercise,
-                sets: sortWorkoutSets(updatedSets),
-              }
-            : workoutExercise,
-        ),
-      );
-    } catch (error) {
-      setSetEditError(getErrorMessage(error));
-    } finally {
-      setDeletingSetIds((currentIds) => {
-        const nextIds = new Set(currentIds);
-        nextIds.delete(setId);
-        return nextIds;
-      });
-    }
+    enqueueSave({
+      key: getSetDeleteKey(setId),
+      describe: "delete set",
+      run: (signal) =>
+        fetchJson<WorkoutSet[]>(`/api/sets/${setId}`, {
+          method: "DELETE",
+          signal,
+        }),
+      onSuccess: (response) => {
+        const updatedSets = response as WorkoutSet[];
+
+        setWorkoutExercisesAndRef((currentExercises) =>
+          currentExercises.map((workoutExercise) =>
+            workoutExercise.id === workoutExerciseId
+              ? {
+                  ...workoutExercise,
+                  sets: sortWorkoutSets(updatedSets),
+                }
+              : workoutExercise,
+          ),
+        );
+      },
+    });
   }
 
   async function handleUpdateWorkoutExerciseUnit(
     workoutExerciseId: string,
     weightUnit: "lbs" | "kg",
   ) {
-    setSavingUnitExerciseIds((currentIds) =>
-      new Set(currentIds).add(workoutExerciseId),
-    );
     setSetEditError(null);
 
-    try {
-      const updatedWorkoutExercise = await fetchJson<WorkoutSessionExercise>(
-        `/api/workout-session-exercises/${workoutExerciseId}/weight-unit`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ weight_unit: weightUnit }),
-        },
-      );
-
-      setWorkoutExercises((currentExercises) =>
-        sortWorkoutExercises(
-          currentExercises.map((workoutExercise) =>
-            workoutExercise.id === workoutExerciseId
-              ? updatedWorkoutExercise
-              : workoutExercise,
-          ),
+    setWorkoutExercisesAndRef((currentExercises) =>
+      sortWorkoutExercises(
+        currentExercises.map((workoutExercise) =>
+          workoutExercise.id === workoutExerciseId
+            ? { ...workoutExercise, input_weight_unit: weightUnit }
+            : workoutExercise,
         ),
-      );
-    } catch (error) {
-      setSetEditError(getErrorMessage(error));
-    } finally {
-      setSavingUnitExerciseIds((currentIds) => {
-        const nextIds = new Set(currentIds);
-        nextIds.delete(workoutExerciseId);
-        return nextIds;
-      });
-    }
+      ),
+    );
+
+    enqueueSave({
+      key: getWorkoutExerciseFieldKey(workoutExerciseId, "weight-unit"),
+      describe: "exercise weight unit",
+      run: (signal) =>
+        fetchJson<WorkoutSessionExercise>(
+          `/api/workout-session-exercises/${workoutExerciseId}/weight-unit`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ weight_unit: weightUnit }),
+            signal,
+          },
+        ),
+      onSuccess: (response) => {
+        const updatedWorkoutExercise = response as WorkoutSessionExercise;
+
+        setWorkoutExercisesAndRef((currentExercises) =>
+          sortWorkoutExercises(
+            currentExercises.map((workoutExercise) =>
+              workoutExercise.id === workoutExerciseId
+                ? updatedWorkoutExercise
+                : workoutExercise,
+            ),
+          ),
+        );
+      },
+    });
   }
 
   const persistWorkoutExerciseNotes = useCallback(async (
@@ -672,34 +826,54 @@ function LiveWorkout({
     notes: string,
   ) => {
     setSetEditError(null);
+    let sentNotes = notes;
+    let sentVersion = exerciseNoteVersionsRef.current.get(workoutExerciseId) ?? 0;
 
-    try {
-      const updatedWorkoutExercise = await fetchJson<WorkoutSessionExercise>(
-        `/api/workout-session-exercises/${workoutExerciseId}`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
+    enqueueSave({
+      key: getWorkoutExerciseFieldKey(workoutExerciseId, "notes"),
+      describe: "exercise notes",
+      run: (signal) => {
+        sentNotes = latestExerciseNotesRef.current.get(workoutExerciseId) ?? "";
+        sentVersion = exerciseNoteVersionsRef.current.get(workoutExerciseId) ?? 0;
+
+        return fetchJson<WorkoutSessionExercise>(
+          `/api/workout-session-exercises/${workoutExerciseId}`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ notes: sentNotes.trim() || null }),
+            signal,
           },
-          body: JSON.stringify({ notes: notes.trim() || null }),
-        },
-      );
+        );
+      },
+      onSuccess: (response) => {
+        const updatedWorkoutExercise = response as WorkoutSessionExercise;
+        const currentVersion =
+          exerciseNoteVersionsRef.current.get(workoutExerciseId) ?? 0;
 
-      setWorkoutExercises((currentExercises) =>
-        sortWorkoutExercises(
-          currentExercises.map((workoutExercise) =>
-            workoutExercise.id === workoutExerciseId
-              ? latestExerciseNotesRef.current.get(workoutExerciseId) === notes
+        if (currentVersion !== sentVersion) {
+          return;
+        }
+
+        setWorkoutExercisesAndRef((currentExercises) =>
+          sortWorkoutExercises(
+            currentExercises.map((workoutExercise) =>
+              workoutExercise.id === workoutExerciseId &&
+              latestExerciseNotesRef.current.get(workoutExerciseId) === sentNotes
                 ? updatedWorkoutExercise
-                : workoutExercise
-              : workoutExercise,
+                : workoutExercise,
+            ),
           ),
-        ),
-      );
-    } catch (error) {
-      setSetEditError(getErrorMessage(error));
-    }
-  }, []);
+        );
+      },
+    });
+
+    await waitForSaveKeys([
+      getWorkoutExerciseFieldKey(workoutExerciseId, "notes"),
+    ]);
+  }, [enqueueSave, setWorkoutExercisesAndRef, waitForSaveKeys]);
 
   const saveWorkoutExerciseNotes = useCallback((
     workoutExerciseId: string,
@@ -711,49 +885,49 @@ function LiveWorkout({
     if (existingTimeoutId) {
       window.clearTimeout(existingTimeoutId);
       noteSaveTimersRef.current.delete(workoutExerciseId);
+      syncDebouncedNoteTimerCount();
     }
 
-    const savePromise = persistWorkoutExerciseNotes(
-      workoutExerciseId,
-      normalizedNotes,
-    ).finally(() => {
-      if (noteSavePromisesRef.current.get(workoutExerciseId) === savePromise) {
-        noteSavePromisesRef.current.delete(workoutExerciseId);
-      }
-    });
-
-    noteSavePromisesRef.current.set(workoutExerciseId, savePromise);
-
-    return savePromise;
-  }, [persistWorkoutExerciseNotes]);
+    return persistWorkoutExerciseNotes(workoutExerciseId, normalizedNotes);
+  }, [persistWorkoutExerciseNotes, syncDebouncedNoteTimerCount]);
 
   const flushPendingExerciseNotes = useCallback(async () => {
-    const immediateSaves: Promise<void>[] = [];
+    const noteKeys: string[] = [];
 
     for (const [workoutExerciseId, timeoutId] of noteSaveTimersRef.current) {
       window.clearTimeout(timeoutId);
       noteSaveTimersRef.current.delete(workoutExerciseId);
-      immediateSaves.push(
-        saveWorkoutExerciseNotes(
-          workoutExerciseId,
-          latestExerciseNotesRef.current.get(workoutExerciseId) ?? "",
-        ),
+      noteKeys.push(getWorkoutExerciseFieldKey(workoutExerciseId, "notes"));
+      void saveWorkoutExerciseNotes(
+        workoutExerciseId,
+        latestExerciseNotesRef.current.get(workoutExerciseId) ?? "",
       );
     }
 
-    await Promise.all([
-      ...immediateSaves,
-      ...noteSavePromisesRef.current.values(),
-    ]);
-  }, [saveWorkoutExerciseNotes]);
+    syncDebouncedNoteTimerCount();
+
+    if (noteKeys.length === 0) {
+      return true;
+    }
+
+    return waitForSaveKeys(noteKeys);
+  }, [
+    saveWorkoutExerciseNotes,
+    syncDebouncedNoteTimerCount,
+    waitForSaveKeys,
+  ]);
 
   function handleChangeWorkoutExerciseNotes(
     workoutExerciseId: string,
     notes: string,
   ) {
     latestExerciseNotesRef.current.set(workoutExerciseId, notes);
+    exerciseNoteVersionsRef.current.set(
+      workoutExerciseId,
+      (exerciseNoteVersionsRef.current.get(workoutExerciseId) ?? 0) + 1,
+    );
 
-    setWorkoutExercises((currentExercises) =>
+    setWorkoutExercisesAndRef((currentExercises) =>
       currentExercises.map((workoutExercise) =>
         workoutExercise.id === workoutExerciseId
           ? { ...workoutExercise, notes }
@@ -769,85 +943,104 @@ function LiveWorkout({
 
     const timeoutId = window.setTimeout(() => {
       noteSaveTimersRef.current.delete(workoutExerciseId);
+      syncDebouncedNoteTimerCount();
       void saveWorkoutExerciseNotes(workoutExerciseId, notes);
     }, 500);
 
     noteSaveTimersRef.current.set(workoutExerciseId, timeoutId);
+    syncDebouncedNoteTimerCount();
   }
 
   async function handleRemoveWorkoutExercise(
     workoutExercise: WorkoutSessionExercise,
   ) {
-    setRemovingWorkoutExerciseIds((currentIds) =>
-      new Set(currentIds).add(workoutExercise.id),
-    );
     setSetEditError(null);
     setFinishError(null);
 
-    try {
-      const updatedWorkoutExercises = await fetchJson<
-        WorkoutSessionExercise[]
-      >(`/api/workout-session-exercises/${workoutExercise.id}`, {
-        method: "DELETE",
-      });
+    const pendingNoteTimer = noteSaveTimersRef.current.get(workoutExercise.id);
 
-      setWorkoutExercises(sortWorkoutExercises(updatedWorkoutExercises));
-    } catch (error) {
-      setSetEditError(getErrorMessage(error));
-    } finally {
-      setRemovingWorkoutExerciseIds((currentIds) => {
-        const nextIds = new Set(currentIds);
-        nextIds.delete(workoutExercise.id);
-        return nextIds;
-      });
+    if (pendingNoteTimer) {
+      window.clearTimeout(pendingNoteTimer);
+      noteSaveTimersRef.current.delete(workoutExercise.id);
+      syncDebouncedNoteTimerCount();
     }
+
+    latestExerciseNotesRef.current.delete(workoutExercise.id);
+    exerciseNoteVersionsRef.current.delete(workoutExercise.id);
+    dropSave(getWorkoutExerciseFieldKey(workoutExercise.id, "notes"));
+    for (const set of workoutExercise.sets) {
+      dropSave(getSetUpdateKey(set.id));
+      dropSave(getSetDeleteKey(set.id));
+    }
+
+    setWorkoutExercisesAndRef((currentExercises) =>
+      currentExercises.filter((currentExercise) => {
+        return currentExercise.id !== workoutExercise.id;
+      }),
+    );
+
+    enqueueSave({
+      key: getWorkoutExerciseRemoveKey(workoutExercise.id),
+      describe: "remove exercise",
+      run: (signal) =>
+        fetchJson<WorkoutSessionExercise[]>(
+          `/api/workout-session-exercises/${workoutExercise.id}`,
+          {
+            method: "DELETE",
+            signal,
+          },
+        ),
+      onSuccess: (response) => {
+        const updatedWorkoutExercises = response as WorkoutSessionExercise[];
+
+        setWorkoutExercisesAndRef(
+          sortWorkoutExercises(updatedWorkoutExercises),
+        );
+      },
+    });
   }
 
   async function saveWorkoutExerciseOrder(orderedIds: string[]) {
-    const previousOrderIds = exerciseOrderIds;
     const requestId = exerciseOrderRequestRef.current + 1;
 
     exerciseOrderRequestRef.current = requestId;
-    setReorderError(null);
-    setFailedExerciseOrderIds(null);
-    setWorkoutExercises((currentExercises) =>
+    setWorkoutExercisesAndRef((currentExercises) =>
       applyWorkoutExerciseOrder(currentExercises, orderedIds),
     );
 
-    try {
-      const savedWorkoutExercises = await fetchJson<WorkoutSessionExercise[]>(
-        `/api/workout-sessions/${session.id}/exercise-order`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
+    enqueueSave({
+      key: getExerciseOrderKey(session.id),
+      describe: "exercise order",
+      run: (signal) =>
+        fetchJson<WorkoutSessionExercise[]>(
+          `/api/workout-sessions/${session.id}/exercise-order`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              workout_exercise_ids: latestWorkoutExercisesRef.current.map(
+                (workoutExercise) => workoutExercise.id,
+              ),
+            }),
+            signal,
           },
-          body: JSON.stringify({ workout_exercise_ids: orderedIds }),
-        },
-      );
+        ),
+      onSuccess: (response) => {
+        if (exerciseOrderRequestRef.current !== requestId) {
+          return;
+        }
 
-      if (exerciseOrderRequestRef.current !== requestId) {
-        return;
-      }
+        const savedOrderIds = sortWorkoutExercises(
+          response as WorkoutSessionExercise[],
+        ).map((workoutExercise) => workoutExercise.id);
 
-      const savedOrderIds = sortWorkoutExercises(savedWorkoutExercises).map(
-        (workoutExercise) => workoutExercise.id,
-      );
-
-      setWorkoutExercises((currentExercises) =>
-        applyWorkoutExerciseOrder(currentExercises, savedOrderIds),
-      );
-    } catch (error) {
-      if (exerciseOrderRequestRef.current !== requestId) {
-        return;
-      }
-
-      setWorkoutExercises((currentExercises) =>
-        applyWorkoutExerciseOrder(currentExercises, previousOrderIds),
-      );
-      setFailedExerciseOrderIds(orderedIds);
-      setReorderError(getErrorMessage(error));
-    }
+        setWorkoutExercisesAndRef((currentExercises) =>
+          applyWorkoutExerciseOrder(currentExercises, savedOrderIds),
+        );
+      },
+    });
   }
 
   function handleWorkoutExerciseDragEnd(event: DragEndEvent) {
@@ -901,7 +1094,12 @@ function LiveWorkout({
   const validateAndFinishWorkout = useCallback(async (
     exercisesForSummary = workoutExercises,
   ) => {
-    await flushPendingExerciseNotes();
+    const didFlushNotes = await flushPendingExerciseNotes();
+
+    if (!didFlushNotes || isSaveQueueBusy) {
+      showSyncBusyToast();
+      return;
+    }
 
     const validation = await fetchJson<FinishValidationResponse>(
       `/api/workout-sessions/${session.id}/finish/validate`,
@@ -937,11 +1135,18 @@ function LiveWorkout({
     flushPendingExerciseNotes,
     offsetMs,
     onReadyToSave,
+    isSaveQueueBusy,
     session,
+    showSyncBusyToast,
     workoutExercises,
   ]);
 
   const handleFinishWorkout = useCallback(async () => {
+    if (isSyncBusy) {
+      showSyncBusyToast();
+      return;
+    }
+
     setIsFinishing(true);
     setFinishError(null);
 
@@ -952,7 +1157,7 @@ function LiveWorkout({
     } finally {
       setIsFinishing(false);
     }
-  }, [validateAndFinishWorkout]);
+  }, [isSyncBusy, showSyncBusyToast, validateAndFinishWorkout]);
 
   useEffect(() => {
     finishWorkoutRef.current = () => {
@@ -981,9 +1186,14 @@ function LiveWorkout({
       <div className="space-y-4">
         <LiveWorkoutStickyHeader
           duration={formatElapsedWords(elapsedSeconds)}
+          failedSaveCount={saveQueueState.failed.size}
           isFinishing={isFinishing}
+          isSaving={saveQueueState.inFlight.size > 0}
+          isSyncBusy={isSyncBusy}
           onMinimize={onMinimize}
           onFinish={() => void handleFinishWorkout()}
+          onRetryFailedSaves={retryFailedSaves}
+          onSyncBusyTap={showSyncBusyToast}
           sets={workoutSummary.checkedSets}
           volume={formatVolumeSummary(
             workoutSummary.volumeValue,
@@ -1002,6 +1212,8 @@ function LiveWorkout({
 
         {finishError ? <FinishError message={finishError} /> : null}
 
+        {syncBusyToast ? <SyncBusyToast message={syncBusyToast} /> : null}
+
         {!isLoadingWorkoutExercises &&
         !workoutExercisesError &&
         workoutExercises.length === 0 ? (
@@ -1013,16 +1225,6 @@ function LiveWorkout({
         workoutExercises.length > 0 ? (
           <div className="space-y-3">
             {setEditError ? <SetEditError message={setEditError} /> : null}
-            {reorderError ? (
-              <ExerciseOrderError
-                message={reorderError}
-                onRetry={() => {
-                  if (failedExerciseOrderIds) {
-                    void saveWorkoutExerciseOrder(failedExerciseOrderIds);
-                  }
-                }}
-              />
-            ) : null}
             <DndContext
               collisionDetection={closestCenter}
               modifiers={[restrictToVerticalAxis]}
@@ -1037,14 +1239,23 @@ function LiveWorkout({
                   {workoutExercises.map((workoutExercise) => (
                     <SortableWorkoutExerciseCard
                       key={workoutExercise.id}
-                      isAddingSet={addingSetExerciseIds.has(workoutExercise.id)}
-                      isSetDeleting={(setId) => deletingSetIds.has(setId)}
-                      isSetSaving={(setId) => savingSetIds.has(setId)}
-                      isUnitSaving={savingUnitExerciseIds.has(
-                        workoutExercise.id,
+                      isAddingSet={isQueuePrefixActive(
+                        getSetAddKeyPrefix(workoutExercise.id),
                       )}
-                      isRemoving={removingWorkoutExerciseIds.has(
-                        workoutExercise.id,
+                      isSetDeleting={(setId) =>
+                        isQueueKeyActive(getSetDeleteKey(setId))
+                      }
+                      isSetSaving={(setId) =>
+                        isQueueKeyActive(getSetUpdateKey(setId))
+                      }
+                      isUnitSaving={isQueueKeyActive(
+                        getWorkoutExerciseFieldKey(
+                          workoutExercise.id,
+                          "weight-unit",
+                        ),
+                      )}
+                      isRemoving={isQueueKeyActive(
+                        getWorkoutExerciseRemoveKey(workoutExercise.id),
                       )}
                       onAddSet={() => void handleAddSet(workoutExercise.id)}
                       onDeleteSet={(setId) =>
@@ -1326,23 +1537,21 @@ function SetEditError({ message }: { message: string }) {
   );
 }
 
-function ExerciseOrderError({
-  message,
+function FailedSavesBanner({
+  count,
   onRetry,
 }: {
-  message: string;
+  count: number;
   onRetry: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onRetry}
-      className="w-full rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-left text-sm font-semibold leading-6 text-amber-100 transition active:scale-[0.99]"
+      className="w-full border-b border-amber-300/20 bg-amber-300/10 px-5 py-3 text-left text-sm font-semibold leading-6 text-amber-100 transition active:bg-amber-300/15"
     >
-      Couldn&apos;t save order. Tap to retry.
-      <span className="block text-xs font-medium text-amber-100/70">
-        {message}
-      </span>
+      Couldn&apos;t save {count} {count === 1 ? "change" : "changes"}. Tap to
+      retry.
     </button>
   );
 }
@@ -1355,24 +1564,53 @@ function FinishError({ message }: { message: string }) {
   );
 }
 
+function SyncBusyToast({ message }: { message: string }) {
+  return (
+    <div className="fixed inset-x-5 bottom-24 z-50 mx-auto max-w-sm rounded-2xl border border-amber-300/25 bg-amber-300/15 px-4 py-3 text-center text-sm font-semibold text-amber-100 shadow-xl shadow-black/40">
+      {message}
+    </div>
+  );
+}
+
+function SavingPill() {
+  return (
+    <span className="inline-flex h-7 items-center gap-1.5 rounded-full border border-emerald-300/20 bg-emerald-300/10 px-2.5 text-xs font-bold text-emerald-100">
+      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300" />
+      Saving
+    </span>
+  );
+}
+
 function LiveWorkoutStickyHeader({
   duration,
+  failedSaveCount,
   isFinishing,
+  isSaving,
+  isSyncBusy,
   onFinish,
   onMinimize,
+  onRetryFailedSaves,
+  onSyncBusyTap,
   sets,
   volume,
 }: {
   duration: string;
+  failedSaveCount: number;
   isFinishing: boolean;
+  isSaving: boolean;
+  isSyncBusy: boolean;
   onFinish: () => void;
   onMinimize: () => void;
+  onRetryFailedSaves: () => void;
+  onSyncBusyTap: () => void;
   sets: number;
   volume: string;
 }) {
+  const isFinishUnavailable = isFinishing || isSyncBusy;
+
   return (
     <div className="sticky top-0 z-30 -mx-5 -mt-px bg-[#101010]">
-      <div className="grid min-h-[68px] grid-cols-[40px_minmax(0,1fr)_40px_auto] items-center gap-2 border-b border-white/10 bg-[#181818] px-5 py-3">
+      <div className="grid min-h-[68px] grid-cols-[40px_minmax(0,1fr)_auto_40px_auto] items-center gap-2 border-b border-white/10 bg-[#181818] px-5 py-3">
         <button
           type="button"
           onClick={onMinimize}
@@ -1384,6 +1622,7 @@ function LiveWorkoutStickyHeader({
         <h1 className="min-w-0 truncate text-xl font-semibold tracking-normal text-white">
           Log Workout
         </h1>
+        {isSaving ? <SavingPill /> : <span />}
         <button
           type="button"
           className="flex h-10 w-10 items-center justify-center rounded-full text-zinc-100 transition active:scale-95 active:bg-white/[0.06]"
@@ -1393,13 +1632,32 @@ function LiveWorkoutStickyHeader({
         </button>
         <button
           type="button"
-          onClick={onFinish}
-          disabled={isFinishing}
-          className="h-10 rounded-xl bg-emerald-500 px-4 text-sm font-bold text-white shadow-lg shadow-emerald-950/40 transition active:scale-[0.99] disabled:cursor-wait disabled:bg-zinc-700 disabled:text-zinc-300"
+          onClick={() => {
+            if (isFinishing) {
+              return;
+            }
+
+            if (isSyncBusy) {
+              onSyncBusyTap();
+              return;
+            }
+
+            onFinish();
+          }}
+          aria-disabled={isFinishUnavailable}
+          className={
+            isFinishUnavailable
+              ? "h-10 cursor-not-allowed rounded-xl bg-zinc-700 px-4 text-sm font-bold text-zinc-300 transition"
+              : "h-10 rounded-xl bg-emerald-500 px-4 text-sm font-bold text-white shadow-lg shadow-emerald-950/40 transition active:scale-[0.99]"
+          }
         >
           {isFinishing ? "Finishing" : "Finish"}
         </button>
       </div>
+
+      {failedSaveCount > 0 ? (
+        <FailedSavesBanner count={failedSaveCount} onRetry={onRetryFailedSaves} />
+      ) : null}
 
       <div className="grid min-h-[68px] grid-cols-[minmax(118px,1.35fr)_minmax(74px,0.85fr)_minmax(38px,0.45fr)] gap-2 border-b border-white/10 bg-[#101010] px-5 py-3">
         <LiveWorkoutStat label="Duration" value={duration} accent />
@@ -2265,7 +2523,7 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
 
   if (!response.ok) {
-    throw new Error(await readErrorResponse(response));
+    throw new HttpError(response.status, await readErrorResponse(response), url);
   }
 
   return (await response.json()) as T;
@@ -2464,6 +2722,101 @@ function applyWorkoutExerciseOrder(
     ...exercisesById.get(id)!,
     order_index: orderIndex,
   }));
+}
+
+function getSetPatchFields(patch: WorkoutSetPatch) {
+  return Object.keys(patch) as SetDirtyField[];
+}
+
+function getWorkoutSetPatch(set: WorkoutSet): WorkoutSetPatch {
+  return {
+    checked: set.checked,
+    reps: set.reps,
+    rpe: set.rpe,
+    set_type: set.set_type,
+    weight_input_value: set.weight_input_value,
+    ...(set.weight_input_unit ? { weight_input_unit: set.weight_input_unit } : {}),
+  };
+}
+
+function mergeWorkoutSetPatch(set: WorkoutSet, patch: WorkoutSetPatch) {
+  return {
+    ...set,
+    ...(patch.checked !== undefined ? { checked: patch.checked } : {}),
+    ...(patch.reps !== undefined ? { reps: patch.reps } : {}),
+    ...(patch.rpe !== undefined ? { rpe: patch.rpe } : {}),
+    ...(patch.set_type !== undefined ? { set_type: patch.set_type } : {}),
+    ...(patch.weight_input_value !== undefined
+      ? { weight_input_value: patch.weight_input_value }
+      : {}),
+    ...(patch.weight_input_unit !== undefined
+      ? { weight_input_unit: patch.weight_input_unit }
+      : {}),
+  };
+}
+
+function mergeServerWorkoutSets(
+  localSets: WorkoutSet[],
+  serverSets: WorkoutSet[],
+  dirtySetFieldVersions: Map<string, Map<SetDirtyField, number>>,
+) {
+  const localSetsById = new Map(localSets.map((set) => [set.id, set]));
+
+  return serverSets.map((serverSet) => {
+    const localSet = localSetsById.get(serverSet.id);
+    const dirtyFields = dirtySetFieldVersions.get(serverSet.id);
+
+    if (!localSet || !dirtyFields || dirtyFields.size === 0) {
+      return serverSet;
+    }
+
+    return {
+      ...serverSet,
+      ...(dirtyFields.has("checked") ? { checked: localSet.checked } : {}),
+      ...(dirtyFields.has("reps") ? { reps: localSet.reps } : {}),
+      ...(dirtyFields.has("rpe") ? { rpe: localSet.rpe } : {}),
+      ...(dirtyFields.has("set_type") ? { set_type: localSet.set_type } : {}),
+      ...(dirtyFields.has("weight_input_value")
+        ? { weight_input_value: localSet.weight_input_value }
+        : {}),
+      ...(dirtyFields.has("weight_input_unit")
+        ? { weight_input_unit: localSet.weight_input_unit }
+        : {}),
+    };
+  });
+}
+
+function hasLocalWorkoutSet(
+  workoutExercises: WorkoutSessionExercise[],
+  setId: string,
+) {
+  return workoutExercises.some((workoutExercise) =>
+    workoutExercise.sets.some((set) => set.id === setId),
+  );
+}
+
+function getSetUpdateKey(setId: string) {
+  return `set:${setId}`;
+}
+
+function getSetAddKeyPrefix(workoutExerciseId: string) {
+  return `set-add:${workoutExerciseId}:`;
+}
+
+function getSetDeleteKey(setId: string) {
+  return `set-delete:${setId}`;
+}
+
+function getWorkoutExerciseFieldKey(workoutExerciseId: string, field: string) {
+  return `workout-exercise:${workoutExerciseId}:${field}`;
+}
+
+function getWorkoutExerciseRemoveKey(workoutExerciseId: string) {
+  return `workout-exercise-remove:${workoutExerciseId}`;
+}
+
+function getExerciseOrderKey(sessionId: string) {
+  return `exercise-order:${sessionId}`;
 }
 
 function sortWorkoutSets(sets: WorkoutSet[]) {
