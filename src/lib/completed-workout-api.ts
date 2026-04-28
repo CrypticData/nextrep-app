@@ -18,11 +18,13 @@ const completedWorkoutSelect = {
     orderBy: { orderIndex: "asc" },
     select: {
       id: true,
+      exerciseId: true,
       orderIndex: true,
       inputWeightUnit: true,
       exerciseNameSnapshot: true,
       equipmentNameSnapshot: true,
       primaryMuscleGroupNameSnapshot: true,
+      notes: true,
       exercise: {
         select: {
           exerciseType: true,
@@ -97,11 +99,13 @@ export type CompletedWorkoutDetail = {
   };
   exercises: {
     id: string;
+    exercise_id: string | null;
     order_index: number;
     exercise_name_snapshot: string;
     equipment_name_snapshot: string | null;
     primary_muscle_group_name_snapshot: string | null;
     input_weight_unit: WeightUnit | null;
+    notes: string | null;
     exercise_type: ExerciseType | null;
     recorded_set_count: number;
     sets: {
@@ -203,12 +207,14 @@ function toCompletedWorkoutDetail(
     volume: summary.volume,
     exercises: session.exercises.map((exercise) => ({
       id: exercise.id,
+      exercise_id: exercise.exerciseId,
       order_index: exercise.orderIndex,
       exercise_name_snapshot: exercise.exerciseNameSnapshot,
       equipment_name_snapshot: exercise.equipmentNameSnapshot,
       primary_muscle_group_name_snapshot:
         exercise.primaryMuscleGroupNameSnapshot,
       input_weight_unit: exercise.inputWeightUnit,
+      notes: exercise.notes,
       exercise_type: exercise.exercise?.exerciseType ?? null,
       recorded_set_count: exercise.sets.length,
       sets: exercise.sets.map(toCompletedSetDetail),

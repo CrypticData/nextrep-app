@@ -1,11 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useActiveWorkout, useElapsedSeconds } from "./active-workout-context";
 import type { ActiveWorkoutSession } from "./active-workout-context";
 import { AppShell } from "./app-shell";
 import { ConfirmSheet } from "./confirm-sheet";
+import {
+  WorkoutMetadataHeader,
+  WorkoutMetadataSection,
+} from "./workout-metadata-ui";
+import {
+  MAX_WORKOUT_DURATION_SECONDS,
+  clampWorkoutDurationSeconds,
+  durationInputsToSeconds,
+  formatRoundedDuration,
+  toVisibleDurationParts,
+} from "@/lib/workout-duration";
 
 type WorkoutScreen = "start" | "live" | "save";
 type WorkoutSession = ActiveWorkoutSession;
@@ -431,6 +442,8 @@ function LiveWorkout({
   const [isInvalidRowsSheetOpen, setIsInvalidRowsSheetOpen] = useState(false);
   const [invalidWeightedSetCount, setInvalidWeightedSetCount] = useState(0);
   const [isDiscardingInvalidRows, setIsDiscardingInvalidRows] = useState(false);
+  const hasAutoFinishedAtLimitRef = useRef(false);
+  const finishWorkoutRef = useRef<() => void>(() => {});
 
   const loadWorkoutExercises = useCallback(async () => {
     setIsLoadingWorkoutExercises(true);
@@ -714,19 +727,6 @@ function LiveWorkout({
     }
   }
 
-  async function handleFinishWorkout() {
-    setIsFinishing(true);
-    setFinishError(null);
-
-    try {
-      await validateAndFinishWorkout();
-    } catch (error) {
-      setFinishError(getErrorMessage(error));
-    } finally {
-      setIsFinishing(false);
-    }
-  }
-
   async function handleDiscardInvalidRowsAndFinish() {
     setIsDiscardingInvalidRows(true);
     setFinishError(null);
@@ -754,9 +754,9 @@ function LiveWorkout({
     }
   }
 
-  async function validateAndFinishWorkout(
+  const validateAndFinishWorkout = useCallback(async (
     exercisesForSummary = workoutExercises,
-  ) {
+  ) => {
     const validation = await fetchJson<FinishValidationResponse>(
       `/api/workout-sessions/${session.id}/finish/validate`,
       { method: "POST" },
@@ -786,7 +786,37 @@ function LiveWorkout({
         ? "You haven't added any exercises yet. Add an exercise and log a set to finish this workout."
         : "You haven't logged any sets yet. Record at least one set with reps to finish this workout.",
     );
-  }
+  }, [clear, offsetMs, onReadyToSave, session, workoutExercises]);
+
+  const handleFinishWorkout = useCallback(async () => {
+    setIsFinishing(true);
+    setFinishError(null);
+
+    try {
+      await validateAndFinishWorkout();
+    } catch (error) {
+      setFinishError(getErrorMessage(error));
+    } finally {
+      setIsFinishing(false);
+    }
+  }, [validateAndFinishWorkout]);
+
+  useEffect(() => {
+    finishWorkoutRef.current = () => {
+      void handleFinishWorkout();
+    };
+  }, [handleFinishWorkout]);
+
+  useEffect(() => {
+    if (
+      elapsedSeconds >= MAX_WORKOUT_DURATION_SECONDS &&
+      !hasAutoFinishedAtLimitRef.current &&
+      !isFinishing
+    ) {
+      hasAutoFinishedAtLimitRef.current = true;
+      finishWorkoutRef.current();
+    }
+  }, [elapsedSeconds, isFinishing]);
 
   const workoutSummary = useMemo(
     () => getWorkoutSummary(workoutExercises, session.default_weight_unit),
@@ -958,6 +988,9 @@ function SaveWorkoutScreen({
     durationMinutes,
     durationSecondsRemainder,
   );
+  const durationLabel = formatRoundedDuration(
+    durationSeconds ?? draft.summary.durationSeconds,
+  );
 
   async function handleSaveWorkout() {
     const trimmedName = name.trim();
@@ -976,7 +1009,7 @@ function SaveWorkoutScreen({
     }
 
     if (durationSeconds === null) {
-      setSaveError("Duration must use non-negative whole time values.");
+      setSaveError("Duration must be between 0min and 4h 59min.");
       return;
     }
 
@@ -1009,8 +1042,8 @@ function SaveWorkoutScreen({
 
   return (
     <div className="space-y-4">
-      <div className="sticky top-0 z-30 -mx-5 -mt-px bg-[#101010]">
-        <div className="grid min-h-[68px] grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-2 border-b border-white/10 bg-[#181818] px-5 py-3">
+      <WorkoutMetadataHeader
+        left={
           <button
             type="button"
             onClick={onBack}
@@ -1019,9 +1052,8 @@ function SaveWorkoutScreen({
           >
             <ChevronDownIcon className="h-7 w-7 rotate-90" />
           </button>
-          <h1 className="min-w-0 truncate text-xl font-semibold tracking-normal text-white">
-            Save Workout
-          </h1>
+        }
+        right={
           <button
             type="button"
             onClick={() => void handleSaveWorkout()}
@@ -1030,105 +1062,34 @@ function SaveWorkoutScreen({
           >
             {isSaving ? "Saving" : "Save"}
           </button>
-        </div>
-      </div>
-
-      <div className="grid min-h-[68px] grid-cols-[minmax(118px,1.35fr)_minmax(74px,0.85fr)_minmax(58px,0.55fr)] gap-2 border-y border-white/10 bg-[#101010] px-0 py-3">
-        <LiveWorkoutStat
-          label="Duration"
-          value={formatElapsedWords(
-            durationSeconds ?? draft.summary.durationSeconds,
-          )}
-          accent
-        />
-        <LiveWorkoutStat
-          label="Volume"
-          value={formatVolumeSummary(
-            draft.summary.volumeValue,
-            draft.summary.volumeUnit,
-          )}
-        />
-        <LiveWorkoutStat
-          label="Sets"
-          value={draft.summary.recordedSetCount.toString()}
-        />
-      </div>
+        }
+        title="Save Workout"
+      />
 
       {saveError ? <FinishError message={saveError} /> : null}
 
-      <section className="-mx-5 space-y-5 border-y border-white/[0.07] bg-[#101010] px-5 py-5">
-        <SaveWorkoutField label="Workout Title">
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            maxLength={120}
-            className="h-12 w-full rounded-2xl border border-white/10 bg-[#181818] px-4 text-base font-semibold text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-[#1d1d1d]"
-            placeholder="Workout title"
-          />
-        </SaveWorkoutField>
-
-        <SaveWorkoutField label="When">
-          <input
-            type="datetime-local"
-            value={startedAtLocal}
-            onChange={(event) => setStartedAtLocal(event.target.value)}
-            className="h-12 w-full rounded-2xl border border-white/10 bg-[#181818] px-4 text-base font-semibold text-white outline-none transition focus:border-emerald-300/40 focus:bg-[#1d1d1d]"
-          />
-        </SaveWorkoutField>
-
-        <SaveWorkoutField label="Duration">
-          <div className="grid grid-cols-3 gap-3">
-            <label className="block">
-              <span className="mb-2 block text-xs font-semibold text-zinc-500">
-                Hours
-              </span>
-              <input
-                inputMode="numeric"
-                value={durationHours}
-                onChange={(event) => setDurationHours(event.target.value)}
-                className="h-12 w-full rounded-2xl border border-white/10 bg-[#181818] px-4 text-center text-lg font-semibold text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-[#1d1d1d]"
-                placeholder="0"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-2 block text-xs font-semibold text-zinc-500">
-                Minutes
-              </span>
-              <input
-                inputMode="numeric"
-                value={durationMinutes}
-                onChange={(event) => setDurationMinutes(event.target.value)}
-                className="h-12 w-full rounded-2xl border border-white/10 bg-[#181818] px-4 text-center text-lg font-semibold text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-[#1d1d1d]"
-                placeholder="0"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-2 block text-xs font-semibold text-zinc-500">
-                Seconds
-              </span>
-              <input
-                inputMode="numeric"
-                value={durationSecondsRemainder}
-                onChange={(event) =>
-                  setDurationSecondsRemainder(event.target.value)
-                }
-                className="h-12 w-full rounded-2xl border border-white/10 bg-[#181818] px-4 text-center text-lg font-semibold text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-[#1d1d1d]"
-                placeholder="0"
-              />
-            </label>
-          </div>
-        </SaveWorkoutField>
-
-        <SaveWorkoutField label="Description">
-          <textarea
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            rows={4}
-            className="w-full resize-none rounded-2xl border border-white/10 bg-[#181818] px-4 py-3 text-base font-medium leading-6 text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-[#1d1d1d]"
-            placeholder="Notes"
-          />
-        </SaveWorkoutField>
-      </section>
+      <WorkoutMetadataSection
+        description={description}
+        durationHours={durationHours}
+        durationLabel={durationLabel}
+        durationMinutes={durationMinutes}
+        durationSecondsRemainder={durationSecondsRemainder}
+        name={name}
+        onDescriptionChange={setDescription}
+        onDurationChange={(value) => {
+          setDurationHours(value.hours);
+          setDurationMinutes(value.minutes);
+          setDurationSecondsRemainder(value.seconds);
+        }}
+        onNameChange={setName}
+        onStartedAtLocalChange={setStartedAtLocal}
+        setsLabel={draft.summary.recordedSetCount.toString()}
+        startedAtLocal={startedAtLocal}
+        volumeLabel={formatVolumeSummary(
+          draft.summary.volumeValue,
+          draft.summary.volumeUnit,
+        )}
+      />
 
       <button
         type="button"
@@ -1138,23 +1099,6 @@ function SaveWorkoutScreen({
       >
         {isDiscarding ? "Discarding" : "Discard Workout"}
       </button>
-    </div>
-  );
-}
-
-function SaveWorkoutField({
-  children,
-  label,
-}: {
-  children: ReactNode;
-  label: string;
-}) {
-  return (
-    <div className="block">
-      <span className="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-zinc-500">
-        {label}
-      </span>
-      {children}
     </div>
   );
 }
@@ -2225,14 +2169,10 @@ function buildDefaultSaveWorkoutDraft(
   const startedAtMs = Date.parse(session.started_at);
   const durationSeconds = Number.isNaN(startedAtMs)
     ? 0
-    : Math.max(
-        0,
+    : clampWorkoutDurationSeconds(
         Math.floor((Date.now() + (offsetMs ?? 0) - startedAtMs) / 1000),
       );
-
-  const durationHours = Math.floor(durationSeconds / 3600);
-  const durationMinutes = Math.floor((durationSeconds % 3600) / 60);
-  const durationSecondsRemainder = durationSeconds % 60;
+  const durationParts = toVisibleDurationParts(durationSeconds);
   const workoutSummary = getWorkoutSummary(
     workoutExercises,
     session.default_weight_unit,
@@ -2242,9 +2182,9 @@ function buildDefaultSaveWorkoutDraft(
     name: `Workout — ${formatWorkoutNameDate(session.started_at)}`,
     description: "",
     startedAtLocal: toLocalDateTimeInputValue(session.started_at),
-    durationHours,
-    durationMinutes,
-    durationSecondsRemainder,
+    durationHours: durationParts.hours,
+    durationMinutes: durationParts.minutes,
+    durationSecondsRemainder: durationParts.secondsAdjustment,
     summary: {
       durationSeconds,
       recordedSetCount: workoutSummary.recordedSets,
@@ -2257,27 +2197,45 @@ function buildDefaultSaveWorkoutDraft(
 function getDurationSecondsFromInputs(
   hours: string,
   minutes: string,
-  seconds: string,
+  secondsAdjustment: string,
 ) {
   const parsedHours = parseNonNegativeInteger(hours);
   const parsedMinutes = parseNonNegativeInteger(minutes);
-  const parsedSeconds = parseNonNegativeInteger(seconds);
+  const parsedSecondsAdjustment = parseSignedInteger(secondsAdjustment);
 
   if (
     parsedHours === null ||
     parsedMinutes === null ||
-    parsedSeconds === null
+    parsedSecondsAdjustment === null ||
+    parsedHours > Math.floor(MAX_WORKOUT_DURATION_SECONDS / 3600) ||
+    parsedMinutes > 59
   ) {
     return null;
   }
 
-  return parsedHours * 3600 + parsedMinutes * 60 + parsedSeconds;
+  return durationInputsToSeconds(
+    parsedHours,
+    parsedMinutes,
+    parsedSecondsAdjustment,
+  );
 }
 
 function parseNonNegativeInteger(value: string) {
   const trimmedValue = value.trim();
 
   if (!/^\d+$/.test(trimmedValue)) {
+    return null;
+  }
+
+  const parsedValue = Number(trimmedValue);
+
+  return Number.isSafeInteger(parsedValue) ? parsedValue : null;
+}
+
+function parseSignedInteger(value: string) {
+  const trimmedValue = value.trim();
+
+  if (!/^-?\d+$/.test(trimmedValue)) {
     return null;
   }
 

@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import type { ReactNode } from "react";
+import { MAX_WORKOUT_DURATION_SECONDS } from "@/lib/workout-duration";
 
 export type ActiveWorkoutSession = {
   id: string;
@@ -158,7 +159,10 @@ export function useElapsedSeconds(startedAt: string) {
       const estimatedServerNowMs = Date.now() + (offsetMs ?? 0);
 
       setElapsedSeconds(
-        Math.max(0, Math.floor((estimatedServerNowMs - startedAtMs) / 1000)),
+        Math.min(
+          MAX_WORKOUT_DURATION_SECONDS,
+          Math.max(0, Math.floor((estimatedServerNowMs - startedAtMs) / 1000)),
+        ),
       );
     };
 

@@ -1,6 +1,7 @@
 import { Prisma } from "@/generated/prisma/client";
 import type { WorkoutSessionGetPayload } from "@/generated/prisma/models/WorkoutSession";
 import { prisma } from "@/lib/prisma";
+import { MAX_WORKOUT_DURATION_SECONDS } from "@/lib/workout-duration";
 import { reindexWorkoutExerciseSets } from "@/lib/workout-set-api";
 
 const uuidPattern =
@@ -328,11 +329,12 @@ export function parseFinishWorkoutBody(value: unknown):
   if (
     typeof value.duration_seconds !== "number" ||
     !Number.isInteger(value.duration_seconds) ||
-    value.duration_seconds < 0
+    value.duration_seconds < 0 ||
+    value.duration_seconds > MAX_WORKOUT_DURATION_SECONDS
   ) {
     return {
       ok: false,
-      message: "duration_seconds must be a non-negative integer.",
+      message: "duration_seconds must be between 0 and 17940.",
     };
   }
 

@@ -1,10 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useActiveWorkout, useElapsedSeconds } from "./active-workout-context";
 import type { ActiveWorkoutSession } from "./active-workout-context";
 import { ConfirmSheet } from "./confirm-sheet";
+import { MAX_WORKOUT_DURATION_SECONDS } from "@/lib/workout-duration";
 
 export function ActiveWorkoutCard({
   session,
@@ -17,6 +18,13 @@ export function ActiveWorkoutCard({
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [isDiscarding, setIsDiscarding] = useState(false);
   const [discardError, setDiscardError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (elapsedSeconds >= MAX_WORKOUT_DURATION_SECONDS) {
+      requestOpenLive();
+      router.push("/");
+    }
+  }, [elapsedSeconds, requestOpenLive, router]);
 
   function openLiveWorkout() {
     requestOpenLive();

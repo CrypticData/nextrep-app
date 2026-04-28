@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AppShell } from "@/app/app-shell";
 
@@ -96,6 +97,15 @@ export function SavedWorkoutDetailApp({ workoutId }: { workoutId: string }) {
 
   return (
     <AppShell
+      action={
+        <Link
+          href={`/profile/workouts/${workoutId}/edit`}
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-white/[0.06] text-zinc-200 transition active:scale-95"
+          aria-label="Edit workout"
+        >
+          <EditIcon className="h-5 w-5" />
+        </Link>
+      }
       backHref="/profile"
       mainClassName="px-5 pb-24 pt-4"
       subpage
@@ -406,6 +416,30 @@ function formatDecimal(value: number) {
 
 function formatSetCount(count: number) {
   return `${count} ${count === 1 ? "set" : "sets"}`;
+}
+
+type IconProps = {
+  className?: string;
+};
+
+function EditIcon({ className }: IconProps) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" aria-hidden>
+      <path
+        d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+      <path
+        d="m13.5 6.5 4 4"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="2"
+      />
+    </svg>
+  );
 }
 
 async function readErrorResponse(response: Response) {
