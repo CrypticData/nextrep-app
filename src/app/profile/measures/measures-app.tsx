@@ -395,7 +395,7 @@ function BodyweightModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 px-0">
+    <div className="safe-sheet fixed inset-0 z-50 flex items-end justify-center bg-black/70">
       <button
         type="button"
         aria-label="Close bodyweight form"
@@ -404,7 +404,7 @@ function BodyweightModal({
       />
       <form
         onSubmit={handleSubmit}
-        className="relative flex max-h-[90dvh] w-full max-w-md flex-col rounded-t-[28px] border border-white/10 bg-[#141414] shadow-2xl shadow-black"
+        className="safe-sheet-panel relative flex max-h-[90dvh] w-full max-w-md flex-col rounded-t-[28px] border border-white/10 bg-[#141414] shadow-2xl shadow-black"
       >
         <div className="flex justify-center px-5 py-3">
           <div className="h-1 w-10 rounded-full bg-white/20" />
@@ -443,7 +443,7 @@ function BodyweightModal({
                 onChange={(event) => setValue(event.target.value)}
                 inputMode="decimal"
                 placeholder="138.89"
-                className="h-12 min-w-0 rounded-2xl border border-white/10 bg-[#232323] px-4 text-[15px] text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-400/70"
+                className="h-12 min-w-0 rounded-2xl border border-white/10 bg-[#232323] px-4 text-base text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-400/70"
               />
               <div className="flex h-12 min-w-16 items-center justify-center rounded-2xl bg-[#232323] px-4 text-sm font-bold text-zinc-300">
                 {editingRecord?.display_weight_unit ?? weightUnit}
@@ -456,7 +456,7 @@ function BodyweightModal({
               type="date"
               value={measuredAt}
               onChange={(event) => setMeasuredAt(event.target.value)}
-              className="h-12 w-full rounded-2xl border border-white/10 bg-[#232323] px-4 text-[15px] text-white outline-none transition focus:border-emerald-400/70"
+              className="h-12 w-full rounded-2xl border border-white/10 bg-[#232323] px-4 text-base text-white outline-none transition focus:border-emerald-400/70"
             />
           </FormField>
         </div>

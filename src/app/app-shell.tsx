@@ -34,7 +34,7 @@ export function AppShell({
   children,
   hideFloatingCard = false,
   hideHeader = false,
-  mainClassName = "px-5 pb-6 pt-4",
+  mainClassName = "safe-main-x pb-6 pt-4",
   subpage = false,
   title,
 }: AppShellProps) {
@@ -46,10 +46,10 @@ export function AppShell({
     (pathname === "/" || pathname === "/profile");
 
   return (
-    <div className="h-dvh overflow-hidden bg-[#050505] text-zinc-50">
-      <div className="mx-auto flex h-dvh w-full max-w-md flex-col overflow-hidden bg-[#101010] shadow-2xl shadow-black/40">
+    <div className="h-svh overflow-hidden bg-[#050505] text-zinc-50">
+      <div className="mx-auto flex h-svh min-h-0 w-full max-w-md flex-col overflow-hidden bg-[#101010] shadow-2xl shadow-black/40">
         {hideHeader ? null : (
-          <header className="shrink-0 border-b border-white/10 px-5 pb-4 pt-6">
+          <header className="safe-header shrink-0 border-b border-white/10 pb-4">
             {subpage ? (
               <div
                 className={
@@ -129,7 +129,7 @@ function BottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="sticky bottom-0 z-20 grid shrink-0 grid-cols-2 border-t border-white/10 bg-[#111]/95 px-2 pb-3 pt-2 backdrop-blur">
+    <nav className="safe-bottom-nav sticky bottom-0 z-20 grid shrink-0 grid-cols-2 border-t border-white/10 bg-[#111]/95 pt-2 backdrop-blur">
       {navItems.map((item) => {
         const active =
           item.href === "/"

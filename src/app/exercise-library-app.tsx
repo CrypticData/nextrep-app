@@ -81,6 +81,10 @@ type ExerciseHistorySet = {
   checked_at: string | null;
 };
 
+type WorkoutSessionExercise = {
+  id: string;
+};
+
 type ModalMode =
   | { kind: "create" }
   | {
@@ -193,16 +197,21 @@ export function ExerciseLibraryApp({
     setActionError(null);
 
     try {
-      await fetchJson<unknown>(`/api/workout-sessions/${session.id}/exercises`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const createdWorkoutExercise = await fetchJson<WorkoutSessionExercise>(
+        `/api/workout-sessions/${session.id}/exercises`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ exercise_id: exercise.id }),
         },
-        body: JSON.stringify({ exercise_id: exercise.id }),
-      });
+      );
 
       await refreshActiveWorkout({ suppressError: true });
-      requestOpenLive();
+      requestOpenLive({
+        scrollToWorkoutExerciseId: createdWorkoutExercise.id,
+      });
       router.push("/");
     } catch (error) {
       setActionError(getErrorMessage(error));
@@ -311,7 +320,7 @@ export function ExerciseLibraryApp({
               : "Back to profile"
         }
         backText={isAddToWorkoutMode && !selectedExercise ? "Cancel" : undefined}
-        mainClassName="px-5 pb-6 pt-0"
+        mainClassName="safe-main-x pb-6 pt-0"
         subpage
         title={
           selectedExercise
@@ -550,7 +559,7 @@ function ExerciseListControls({
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
           placeholder="Search exercise"
-          className="min-w-0 flex-1 bg-transparent text-[15px] text-white outline-none placeholder:text-zinc-600"
+          className="min-w-0 flex-1 bg-transparent text-base text-white outline-none placeholder:text-zinc-600"
         />
         {search.length > 0 ? (
           <button
@@ -1054,14 +1063,14 @@ function ExerciseActionsSheet({
   onEdit: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60">
+    <div className="safe-sheet fixed inset-0 z-50 flex items-end justify-center bg-black/60">
       <button
         type="button"
         aria-label="Close exercise actions"
         className="absolute inset-0 cursor-default"
         onClick={onCancel}
       />
-      <section className="confirm-sheet-in relative w-full max-w-md rounded-t-3xl border border-white/10 bg-[#141414] px-5 pb-5 shadow-2xl shadow-black">
+      <section className="safe-sheet-panel confirm-sheet-in relative w-full max-w-md rounded-t-3xl border border-white/10 bg-[#141414] px-5 pb-5 shadow-2xl shadow-black">
         <div className="flex justify-center py-3">
           <div className="h-1 w-9 rounded-full bg-white/15" />
         </div>
@@ -1179,7 +1188,7 @@ function ExerciseModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 px-0">
+    <div className="safe-sheet fixed inset-0 z-50 flex items-end justify-center bg-black/70">
       <button
         type="button"
         aria-label="Close exercise form"
@@ -1188,7 +1197,7 @@ function ExerciseModal({
       />
       <form
         onSubmit={handleSubmit}
-        className="relative flex max-h-[90dvh] w-full max-w-md flex-col rounded-t-[28px] border border-white/10 bg-[#141414] shadow-2xl shadow-black"
+        className="safe-sheet-panel relative flex max-h-[90dvh] w-full max-w-md flex-col rounded-t-[28px] border border-white/10 bg-[#141414] shadow-2xl shadow-black"
       >
         <div className="flex justify-center px-5 py-3">
           <div className="h-1 w-10 rounded-full bg-white/20" />
@@ -1225,7 +1234,7 @@ function ExerciseModal({
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="e.g. Bench Press"
-              className="h-12 w-full rounded-2xl border border-white/10 bg-[#232323] px-4 text-[15px] text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-400/70"
+              className="h-12 w-full rounded-2xl border border-white/10 bg-[#232323] px-4 text-base text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-400/70"
             />
           </FormField>
 
@@ -1235,7 +1244,7 @@ function ExerciseModal({
               onChange={(event) => setDescription(event.target.value)}
               placeholder="Instructions, cues, setup notes"
               rows={3}
-              className="w-full resize-none rounded-2xl border border-white/10 bg-[#232323] px-4 py-3 text-[15px] leading-6 text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-400/70"
+              className="w-full resize-none rounded-2xl border border-white/10 bg-[#232323] px-4 py-3 text-base leading-6 text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-400/70"
             />
           </FormField>
 

@@ -130,6 +130,8 @@ type SortableHandleProps = {
   setActivatorNodeRef: ReturnType<typeof useSortable>["setActivatorNodeRef"];
 };
 
+const SET_SAVE_DEBOUNCE_MS = 350;
+
 export function WorkoutApp() {
   const {
     clear,
@@ -142,6 +144,9 @@ export function WorkoutApp() {
     setSession,
   } = useActiveWorkout();
   const [screen, setScreen] = useState<WorkoutScreen>("start");
+  const [scrollToWorkoutExerciseId, setScrollToWorkoutExerciseId] = useState<
+    string | null
+  >(null);
   const [isStarting, setIsStarting] = useState(false);
   const [isDiscarding, setIsDiscarding] = useState(false);
   const [isDiscardSheetOpen, setIsDiscardSheetOpen] = useState(false);
@@ -151,8 +156,11 @@ export function WorkoutApp() {
     useState<SaveWorkoutDraft | null>(null);
 
   useEffect(() => {
-    if (openLiveRequest > 0 && session) {
+    if (openLiveRequest.sequence > 0 && session) {
       const timeout = window.setTimeout(() => {
+        setScrollToWorkoutExerciseId(
+          openLiveRequest.scrollToWorkoutExerciseId,
+        );
         setScreen("live");
         consumeOpenLiveRequest();
       }, 0);
@@ -243,7 +251,7 @@ export function WorkoutApp() {
     <AppShell
       hideFloatingCard={isActiveWorkoutScreen}
       hideHeader={isActiveWorkoutScreen}
-      mainClassName={isActiveWorkoutScreen ? "px-5 pb-6 pt-0" : undefined}
+      mainClassName={isActiveWorkoutScreen ? "safe-main-x pb-6 pt-0" : undefined}
       title={isActiveWorkoutScreen ? "Log Workout" : "Workout"}
     >
       {isLoading ? <WorkoutLoading /> : null}
@@ -264,6 +272,10 @@ export function WorkoutApp() {
             setError(null);
             setIsDiscardSheetOpen(true);
           }}
+          onScrollToWorkoutExerciseHandled={() =>
+            setScrollToWorkoutExerciseId(null)
+          }
+          scrollToWorkoutExerciseId={scrollToWorkoutExerciseId}
           session={session}
         />
       ) : null}
@@ -409,12 +421,16 @@ function LiveWorkout({
   onDiscard,
   onMinimize,
   onReadyToSave,
+  onScrollToWorkoutExerciseHandled,
+  scrollToWorkoutExerciseId,
   session,
 }: {
   isDiscarding: boolean;
   onDiscard: () => void;
   onMinimize: () => void;
   onReadyToSave: (draft: SaveWorkoutDraft) => void;
+  onScrollToWorkoutExerciseHandled: () => void;
+  scrollToWorkoutExerciseId: string | null;
   session: WorkoutSession;
 }) {
   const router = useRouter();
@@ -460,8 +476,14 @@ function LiveWorkout({
   const latestExerciseNotesRef = useRef<Map<string, string>>(new Map());
   const noteSaveTimersRef = useRef<Map<string, number>>(new Map());
   const exerciseNoteVersionsRef = useRef<Map<string, number>>(new Map());
+  const workoutExerciseElementsRef = useRef<Map<string, HTMLDivElement>>(
+    new Map(),
+  );
+  const highlightedWorkoutExerciseTimerRef = useRef<number | null>(null);
   const exerciseOrderRequestRef = useRef(0);
   const addSetNonceRef = useRef(0);
+  const [highlightedWorkoutExerciseId, setHighlightedWorkoutExerciseId] =
+    useState<string | null>(null);
   const exerciseOrderIds = useMemo(
     () => workoutExercises.map((workoutExercise) => workoutExercise.id),
     [workoutExercises],
@@ -479,13 +501,13 @@ function LiveWorkout({
       | WorkoutSessionExercise[]
       | ((currentExercises: WorkoutSessionExercise[]) => WorkoutSessionExercise[]),
   ) => {
-    setWorkoutExercises((currentExercises) => {
-      const nextExercises =
-        typeof updater === "function" ? updater(currentExercises) : updater;
+    const nextExercises =
+      typeof updater === "function"
+        ? updater(latestWorkoutExercisesRef.current)
+        : updater;
 
-      latestWorkoutExercisesRef.current = nextExercises;
-      return nextExercises;
-    });
+    latestWorkoutExercisesRef.current = nextExercises;
+    setWorkoutExercises(nextExercises);
   }, []);
   const isSyncBusy =
     isSaveQueueBusy || debouncedNoteTimerCount > 0;
@@ -541,6 +563,65 @@ function LiveWorkout({
     return () => window.clearTimeout(timeout);
   }, [loadWorkoutExercises]);
 
+  const registerWorkoutExerciseElement = useCallback(
+    (workoutExerciseId: string, element: HTMLDivElement | null) => {
+      if (element) {
+        workoutExerciseElementsRef.current.set(workoutExerciseId, element);
+        return;
+      }
+
+      workoutExerciseElementsRef.current.delete(workoutExerciseId);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (
+      !scrollToWorkoutExerciseId ||
+      isLoadingWorkoutExercises ||
+      workoutExercisesError
+    ) {
+      return;
+    }
+
+    const targetExists = workoutExercises.some(
+      (workoutExercise) => workoutExercise.id === scrollToWorkoutExerciseId,
+    );
+
+    if (!targetExists) {
+      onScrollToWorkoutExerciseHandled();
+      return;
+    }
+
+    const targetElement = workoutExerciseElementsRef.current.get(
+      scrollToWorkoutExerciseId,
+    );
+
+    if (!targetElement) {
+      return;
+    }
+
+    targetElement.scrollIntoView({ block: "center", behavior: "smooth" });
+    setHighlightedWorkoutExerciseId(scrollToWorkoutExerciseId);
+
+    if (highlightedWorkoutExerciseTimerRef.current !== null) {
+      window.clearTimeout(highlightedWorkoutExerciseTimerRef.current);
+    }
+
+    highlightedWorkoutExerciseTimerRef.current = window.setTimeout(() => {
+      setHighlightedWorkoutExerciseId(null);
+      highlightedWorkoutExerciseTimerRef.current = null;
+    }, 1800);
+
+    onScrollToWorkoutExerciseHandled();
+  }, [
+    isLoadingWorkoutExercises,
+    onScrollToWorkoutExerciseHandled,
+    scrollToWorkoutExerciseId,
+    workoutExercises,
+    workoutExercisesError,
+  ]);
+
   useEffect(() => {
     const noteSaveTimers = noteSaveTimersRef.current;
 
@@ -549,6 +630,14 @@ function LiveWorkout({
         window.clearTimeout(timeoutId);
       }
       noteSaveTimers.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (highlightedWorkoutExerciseTimerRef.current !== null) {
+        window.clearTimeout(highlightedWorkoutExerciseTimerRef.current);
+      }
     };
   }, []);
 
@@ -658,6 +747,8 @@ function LiveWorkout({
       key: getSetUpdateKey(setId),
       describe: "set update",
       run: async (signal) => {
+        await sleep(SET_SAVE_DEBOUNCE_MS, signal);
+
         const payload = buildSetPatchFromLocalState(setId);
         sentVersions = snapshotSetFieldVersions(setId, payload);
 
@@ -1248,6 +1339,9 @@ function LiveWorkout({
                       isSetSaving={(setId) =>
                         isQueueKeyActive(getSetUpdateKey(setId))
                       }
+                      isHighlighted={
+                        highlightedWorkoutExerciseId === workoutExercise.id
+                      }
                       isUnitSaving={isQueueKeyActive(
                         getWorkoutExerciseFieldKey(
                           workoutExercise.id,
@@ -1264,6 +1358,7 @@ function LiveWorkout({
                       onRemoveExercise={() =>
                         void handleRemoveWorkoutExercise(workoutExercise)
                       }
+                      onCardElementChange={registerWorkoutExerciseElement}
                       onUpdateExerciseUnit={(weightUnit) =>
                         handleUpdateWorkoutExerciseUnit(
                           workoutExercise.id,
@@ -1722,11 +1817,16 @@ function EmptyWorkoutExerciseState({
 
 type WorkoutExerciseCardProps = {
   isAddingSet: boolean;
+  isHighlighted: boolean;
   isSetDeleting: (setId: string) => boolean;
   isSetSaving: (setId: string) => boolean;
   isRemoving: boolean;
   isUnitSaving: boolean;
   onAddSet: () => void;
+  onCardElementChange: (
+    workoutExerciseId: string,
+    element: HTMLDivElement | null,
+  ) => void;
   onDeleteSet: (setId: string) => void;
   onRemoveExercise: () => void;
   onNotesChange: (notes: string) => void;
@@ -1738,6 +1838,8 @@ type WorkoutExerciseCardProps = {
 };
 
 function SortableWorkoutExerciseCard(props: WorkoutExerciseCardProps) {
+  const workoutExerciseId = props.workoutExercise.id;
+  const { onCardElementChange } = props;
   const {
     attributes,
     isDragging,
@@ -1746,7 +1848,14 @@ function SortableWorkoutExerciseCard(props: WorkoutExerciseCardProps) {
     setNodeRef,
     transform,
     transition,
-  } = useSortable({ id: props.workoutExercise.id });
+  } = useSortable({ id: workoutExerciseId });
+  const setCardNodeRef = useCallback(
+    (element: HTMLDivElement | null) => {
+      setNodeRef(element);
+      onCardElementChange(workoutExerciseId, element);
+    },
+    [onCardElementChange, setNodeRef, workoutExerciseId],
+  );
   const style: CSSProperties = {
     transform: DndCSS.Transform.toString(transform),
     transition,
@@ -1755,12 +1864,14 @@ function SortableWorkoutExerciseCard(props: WorkoutExerciseCardProps) {
 
   return (
     <div
-      ref={setNodeRef}
+      ref={setCardNodeRef}
       style={style}
       className={
         isDragging
-          ? "relative scale-[1.02] shadow-2xl shadow-black/50"
-          : "relative"
+          ? "relative scale-[1.02] rounded-3xl shadow-2xl shadow-black/50"
+          : props.isHighlighted
+            ? "relative rounded-3xl ring-2 ring-emerald-300/80 transition-shadow duration-300"
+            : "relative rounded-3xl transition-shadow duration-300"
       }
     >
       <WorkoutExerciseCard
@@ -1897,6 +2008,7 @@ function WorkoutExerciseCard({
         {workoutExercise.sets.length > 0 ? (
           workoutExercise.sets.map((set) => (
             <WorkoutSetEditorRow
+              canSelectDrop={canSelectDropSet(workoutExercise.sets, set.id)}
               exerciseType={exerciseType}
               inputWeightUnit={workoutExercise.input_weight_unit}
               isDeleting={isSetDeleting(set.id)}
@@ -2028,6 +2140,7 @@ function WorkoutExerciseActionsSheet({
 }
 
 function WorkoutSetEditorRow({
+  canSelectDrop,
   exerciseType,
   inputWeightUnit,
   isDeleting,
@@ -2037,6 +2150,7 @@ function WorkoutSetEditorRow({
   sessionDefaultWeightUnit,
   set,
 }: {
+  canSelectDrop: boolean;
   exerciseType: ExerciseType;
   inputWeightUnit: "lbs" | "kg" | null;
   isDeleting: boolean;
@@ -2187,6 +2301,7 @@ function WorkoutSetEditorRow({
 
       {isSetTypeSheetOpen ? (
         <SetTypeSheet
+          canSelectDrop={canSelectDrop}
           currentSetType={set.set_type}
           isDeleting={isDeleting}
           onClose={() => setIsSetTypeSheetOpen(false)}
@@ -2213,12 +2328,14 @@ function WorkoutSetEditorRow({
 }
 
 function SetTypeSheet({
+  canSelectDrop,
   currentSetType,
   isDeleting,
   onClose,
   onDelete,
   onSelect,
 }: {
+  canSelectDrop: boolean;
   currentSetType: WorkoutSet["set_type"];
   isDeleting: boolean;
   onClose: () => void;
@@ -2263,43 +2380,66 @@ function SetTypeSheet({
       <div className="flex-1 overflow-y-auto px-5 py-5">
         <WorkoutSheetField label="Set type">
           <div className="space-y-3">
-          {options.map((option) => (
+            {options.map((option) => {
+              const isSelected = currentSetType === option.value;
+              const isDropDisabled =
+                option.value === "drop" && !canSelectDrop && !isSelected;
+
+              return (
+                <button
+                  type="button"
+                  onClick={() => onSelect(option.value)}
+                  key={option.value}
+                  disabled={isDropDisabled}
+                  aria-disabled={isDropDisabled}
+                  className={
+                    isDropDisabled
+                      ? "grid min-h-14 w-full cursor-not-allowed grid-cols-[44px_1fr_28px] items-center rounded-2xl border border-white/[0.06] bg-[#171717] px-3 text-left opacity-70"
+                      : isSelected
+                        ? "grid min-h-14 w-full grid-cols-[44px_1fr_28px] items-center rounded-2xl border border-emerald-400/40 bg-emerald-400/10 px-3 text-left transition active:scale-[0.99]"
+                        : "grid min-h-14 w-full grid-cols-[44px_1fr_28px] items-center rounded-2xl border border-white/10 bg-[#232323] px-3 text-left transition active:scale-[0.99]"
+                  }
+                >
+                  <span
+                    className={`flex h-9 w-9 items-center justify-center rounded-xl bg-black/20 text-base font-bold ${
+                      isDropDisabled ? "text-zinc-600" : option.markerClassName
+                    }`}
+                  >
+                    {option.marker}
+                  </span>
+                  <span>
+                    <span
+                      className={`block text-base font-semibold ${
+                        isDropDisabled ? "text-zinc-500" : "text-white"
+                      }`}
+                    >
+                      {option.label}
+                    </span>
+                    {isDropDisabled ? (
+                      <span className="mt-0.5 block text-xs font-semibold text-zinc-600">
+                        Needs a previous working or failure set
+                      </span>
+                    ) : null}
+                  </span>
+                  {isSelected ? (
+                    <CheckIcon className="h-5 w-5 text-emerald-300" />
+                  ) : null}
+                </button>
+              );
+            })}
             <button
               type="button"
-              onClick={() => onSelect(option.value)}
-              key={option.value}
-              className={
-                currentSetType === option.value
-                  ? "grid min-h-14 w-full grid-cols-[44px_1fr_28px] items-center rounded-2xl border border-emerald-400/40 bg-emerald-400/10 px-3 text-left transition active:scale-[0.99]"
-                  : "grid min-h-14 w-full grid-cols-[44px_1fr_28px] items-center rounded-2xl border border-white/10 bg-[#232323] px-3 text-left transition active:scale-[0.99]"
-              }
+              onClick={onDelete}
+              disabled={isDeleting}
+              className="grid min-h-14 w-full grid-cols-[44px_1fr] items-center rounded-2xl border border-red-400/20 bg-red-500/10 px-3 text-left transition active:scale-[0.99] disabled:cursor-wait disabled:opacity-60"
             >
-              <span
-                className={`flex h-9 w-9 items-center justify-center rounded-xl bg-black/20 text-base font-bold ${option.markerClassName}`}
-              >
-                {option.marker}
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-400/10">
+                <XIcon className="h-5 w-5 text-red-300" />
               </span>
-              <span className="text-base font-semibold text-white">
-                {option.label}
+              <span className="text-base font-semibold text-red-100">
+                {isDeleting ? "Removing Set" : "Remove Set"}
               </span>
-              {currentSetType === option.value ? (
-                <CheckIcon className="h-5 w-5 text-emerald-300" />
-              ) : null}
             </button>
-          ))}
-          <button
-            type="button"
-            onClick={onDelete}
-            disabled={isDeleting}
-            className="grid min-h-14 w-full grid-cols-[44px_1fr] items-center rounded-2xl border border-red-400/20 bg-red-500/10 px-3 text-left transition active:scale-[0.99] disabled:cursor-wait disabled:opacity-60"
-          >
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-400/10">
-              <XIcon className="h-5 w-5 text-red-300" />
-            </span>
-            <span className="text-base font-semibold text-red-100">
-              {isDeleting ? "Removing Set" : "Remove Set"}
-            </span>
-          </button>
           </div>
         </WorkoutSheetField>
       </div>
@@ -2505,14 +2645,14 @@ function BottomSheet({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70">
+    <div className="safe-sheet fixed inset-0 z-50 flex items-end justify-center bg-black/70">
       <button
         type="button"
         className="absolute inset-0 cursor-default"
         onClick={onClose}
         aria-label="Close sheet"
       />
-      <section className="relative flex max-h-[90dvh] w-full max-w-md flex-col rounded-t-[28px] border border-white/10 bg-[#141414] shadow-2xl shadow-black">
+      <section className="safe-sheet-panel relative flex max-h-[90dvh] w-full max-w-md flex-col rounded-t-[28px] border border-white/10 bg-[#141414] shadow-2xl shadow-black">
         {children}
       </section>
     </div>
@@ -2527,6 +2667,27 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   }
 
   return (await response.json()) as T;
+}
+
+function sleep(delayMs: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("Save operation was cancelled.", "AbortError"));
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      signal?.removeEventListener("abort", handleAbort);
+      resolve();
+    }, delayMs);
+
+    function handleAbort() {
+      window.clearTimeout(timeoutId);
+      reject(new DOMException("Save operation was cancelled.", "AbortError"));
+    }
+
+    signal?.addEventListener("abort", handleAbort, { once: true });
+  });
 }
 
 async function readErrorResponse(response: Response) {
@@ -2861,6 +3022,19 @@ function formatSetLabel(set: WorkoutSet) {
   }
 
   return set.set_number?.toString() ?? set.row_index.toString();
+}
+
+function canSelectDropSet(sets: WorkoutSet[], setId: string) {
+  const orderedSets = sortWorkoutSets(sets);
+  const currentSetIndex = orderedSets.findIndex((set) => set.id === setId);
+
+  if (currentSetIndex <= 0) {
+    return false;
+  }
+
+  return orderedSets
+    .slice(0, currentSetIndex)
+    .some((set) => set.set_type === "normal" || set.set_type === "failure");
 }
 
 function getSetLabelClassName(setType: WorkoutSet["set_type"]) {

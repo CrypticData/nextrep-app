@@ -17,6 +17,10 @@ docker compose up
 
 Then open http://localhost:3000 — and http://localhost:3000/api/health to confirm the database is reachable.
 
+### Backups
+
+Use PostgreSQL-native dumps from the Compose `db` service. The backup and restore runbook lives in [docs/backup-restore.md](docs/backup-restore.md).
+
 ### Local dev (faster hot reload)
 
 If you'd rather run the app outside Docker, keep just the database container up and run Next.js locally:

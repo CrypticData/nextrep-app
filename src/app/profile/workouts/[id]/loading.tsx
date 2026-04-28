@@ -4,7 +4,7 @@ export default function LoadingSavedWorkoutDetail() {
   return (
     <AppShell
       backHref="/profile"
-      mainClassName="px-5 pb-24 pt-4"
+      mainClassName="safe-main-x pb-24 pt-4"
       subpage
       title="Workout"
     >

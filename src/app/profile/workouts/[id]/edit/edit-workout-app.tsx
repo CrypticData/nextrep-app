@@ -452,7 +452,7 @@ export function EditWorkoutApp({ workoutId }: { workoutId: string }) {
   return (
     <AppShell
       hideHeader
-      mainClassName="px-5 pb-24 pt-0"
+      mainClassName="safe-main-x pb-24 pt-0"
       title="Edit Workout"
     >
       {loadState === "loading" ? <EditWorkoutSkeleton /> : null}
@@ -778,6 +778,7 @@ function EditableExerciseCard({
         {exercise.sets.length > 0 ? (
           exercise.sets.map((set) => (
             <EditableSetRow
+              canSelectDrop={canSelectDropSet(exercise.sets, set.clientId)}
               defaultWeightUnit={defaultWeightUnit}
               exercise={exercise}
               key={set.clientId}
@@ -852,12 +853,14 @@ function AutosizeNotesTextarea({
 }
 
 function EditableSetRow({
+  canSelectDrop,
   defaultWeightUnit,
   exercise,
   onDelete,
   onUpdate,
   set,
 }: {
+  canSelectDrop: boolean;
   defaultWeightUnit: WeightUnit;
   exercise: DraftWorkoutExercise;
   onDelete: () => void;
@@ -951,6 +954,7 @@ function EditableSetRow({
 
       {isSetTypeSheetOpen ? (
         <SetTypeSheet
+          canSelectDrop={canSelectDrop}
           currentSetType={set.setType}
           onClose={() => setIsSetTypeSheetOpen(false)}
           onDelete={() => {
@@ -980,11 +984,13 @@ function EditableSetRow({
 }
 
 function SetTypeSheet({
+  canSelectDrop,
   currentSetType,
   onClose,
   onDelete,
   onSelect,
 }: {
+  canSelectDrop: boolean;
   currentSetType: SetType;
   onClose: () => void;
   onDelete: () => void;
@@ -1028,30 +1034,53 @@ function SetTypeSheet({
       <div className="flex-1 overflow-y-auto px-5 py-5">
         <SheetField label="Set type">
           <div className="space-y-3">
-            {options.map((option) => (
-              <button
-                type="button"
-                onClick={() => onSelect(option.value)}
-                key={option.value}
-                className={
-                  currentSetType === option.value
-                    ? "grid min-h-14 w-full grid-cols-[44px_1fr_28px] items-center rounded-2xl border border-emerald-400/40 bg-emerald-400/10 px-3 text-left transition active:scale-[0.99]"
-                    : "grid min-h-14 w-full grid-cols-[44px_1fr_28px] items-center rounded-2xl border border-white/10 bg-[#232323] px-3 text-left transition active:scale-[0.99]"
-                }
-              >
-                <span
-                  className={`flex h-9 w-9 items-center justify-center rounded-xl bg-black/20 text-base font-bold ${option.markerClassName}`}
+            {options.map((option) => {
+              const isSelected = currentSetType === option.value;
+              const isDropDisabled =
+                option.value === "drop" && !canSelectDrop && !isSelected;
+
+              return (
+                <button
+                  type="button"
+                  onClick={() => onSelect(option.value)}
+                  key={option.value}
+                  disabled={isDropDisabled}
+                  aria-disabled={isDropDisabled}
+                  className={
+                    isDropDisabled
+                      ? "grid min-h-14 w-full cursor-not-allowed grid-cols-[44px_1fr_28px] items-center rounded-2xl border border-white/[0.06] bg-[#171717] px-3 text-left opacity-70"
+                      : isSelected
+                        ? "grid min-h-14 w-full grid-cols-[44px_1fr_28px] items-center rounded-2xl border border-emerald-400/40 bg-emerald-400/10 px-3 text-left transition active:scale-[0.99]"
+                        : "grid min-h-14 w-full grid-cols-[44px_1fr_28px] items-center rounded-2xl border border-white/10 bg-[#232323] px-3 text-left transition active:scale-[0.99]"
+                  }
                 >
-                  {option.marker}
-                </span>
-                <span className="text-base font-semibold text-white">
-                  {option.label}
-                </span>
-                {currentSetType === option.value ? (
-                  <CheckIcon className="h-5 w-5 text-emerald-300" />
-                ) : null}
-              </button>
-            ))}
+                  <span
+                    className={`flex h-9 w-9 items-center justify-center rounded-xl bg-black/20 text-base font-bold ${
+                      isDropDisabled ? "text-zinc-600" : option.markerClassName
+                    }`}
+                  >
+                    {option.marker}
+                  </span>
+                  <span>
+                    <span
+                      className={`block text-base font-semibold ${
+                        isDropDisabled ? "text-zinc-500" : "text-white"
+                      }`}
+                    >
+                      {option.label}
+                    </span>
+                    {isDropDisabled ? (
+                      <span className="mt-0.5 block text-xs font-semibold text-zinc-600">
+                        Needs a previous working or failure set
+                      </span>
+                    ) : null}
+                  </span>
+                  {isSelected ? (
+                    <CheckIcon className="h-5 w-5 text-emerald-300" />
+                  ) : null}
+                </button>
+              );
+            })}
             <button
               type="button"
               onClick={onDelete}
@@ -1163,8 +1192,8 @@ function ExercisePickerSheet({
   totalExerciseCount: number;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 px-0">
-      <section className="flex max-h-[82dvh] w-full max-w-md flex-col rounded-t-3xl border border-white/10 bg-[#101010] shadow-2xl shadow-black">
+    <div className="safe-sheet fixed inset-0 z-50 flex items-end justify-center bg-black/70">
+      <section className="safe-sheet-panel flex max-h-[82dvh] w-full max-w-md flex-col rounded-t-3xl border border-white/10 bg-[#101010] shadow-2xl shadow-black">
         <div className="shrink-0 border-b border-white/10 px-5 pb-4 pt-5">
           <div className="flex items-center justify-between gap-4">
             <div>
@@ -1191,7 +1220,7 @@ function ExercisePickerSheet({
               value={search}
               onChange={(event) => onSearchChange(event.target.value)}
               placeholder="Search exercise"
-              className="min-w-0 flex-1 bg-transparent text-[15px] text-white outline-none placeholder:text-zinc-600"
+              className="min-w-0 flex-1 bg-transparent text-base text-white outline-none placeholder:text-zinc-600"
             />
           </div>
         </div>
@@ -1380,14 +1409,14 @@ function BottomSheet({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70">
+    <div className="safe-sheet fixed inset-0 z-50 flex items-end justify-center bg-black/70">
       <button
         type="button"
         className="absolute inset-0 cursor-default"
         onClick={onClose}
         aria-label="Close sheet"
       />
-      <section className="relative flex max-h-[90dvh] w-full max-w-md flex-col rounded-t-[28px] border border-white/10 bg-[#141414] shadow-2xl shadow-black">
+      <section className="safe-sheet-panel relative flex max-h-[90dvh] w-full max-w-md flex-col rounded-t-[28px] border border-white/10 bg-[#141414] shadow-2xl shadow-black">
         {children}
       </section>
     </div>
@@ -1473,7 +1502,7 @@ function toDraftWorkout(workout: CompletedWorkoutDetail): DraftWorkout {
             weightValue: set.weight === null ? "" : formatNumberInput(set.weight),
             weightUnit: set.weight_unit,
             repsValue: set.reps.toString(),
-            rpeValue: set.rpe === null ? "" : formatNumberInput(set.rpe),
+            rpeValue: set.rpe === null ? "" : formatRpeInput(set.rpe),
             checked: set.checked,
           })),
         }),
@@ -1847,6 +1876,10 @@ function formatNumberInput(value: number) {
   return Number.isInteger(value) ? value.toString() : value.toFixed(2);
 }
 
+function formatRpeInput(value: number) {
+  return Number.isInteger(value) ? value.toString() : value.toFixed(1);
+}
+
 function formatSetLabel(set: DraftWorkoutSet) {
   if (set.setType === "warmup") {
     return "W";
@@ -1861,6 +1894,23 @@ function formatSetLabel(set: DraftWorkoutSet) {
   }
 
   return set.setNumber?.toString() ?? set.rowIndex.toString();
+}
+
+function canSelectDropSet(sets: DraftWorkoutSet[], setClientId: string) {
+  const orderedSets = [...sets].sort((first, second) => {
+    return first.rowIndex - second.rowIndex;
+  });
+  const currentSetIndex = orderedSets.findIndex((set) => {
+    return set.clientId === setClientId;
+  });
+
+  if (currentSetIndex <= 0) {
+    return false;
+  }
+
+  return orderedSets
+    .slice(0, currentSetIndex)
+    .some((set) => set.setType === "normal" || set.setType === "failure");
 }
 
 function getSetLabelClassName(setType: SetType) {

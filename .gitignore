@@ -46,6 +46,7 @@ prisma/migrations/dev/
 # Docker
 docker-data/
 postgres-data/
+backups/
 
 # Vercel
 .vercel

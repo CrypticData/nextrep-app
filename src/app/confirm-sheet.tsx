@@ -24,14 +24,14 @@ export function ConfirmSheet({
   title,
 }: ConfirmSheetProps) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60">
+    <div className="safe-sheet fixed inset-0 z-50 flex items-end justify-center bg-black/60">
       <button
         type="button"
         aria-label="Cancel"
         className="absolute inset-0 cursor-default"
         onClick={onCancel}
       />
-      <section className="confirm-sheet-in relative w-full max-w-md rounded-t-3xl border border-white/10 bg-[#141414] px-5 pb-5 shadow-2xl shadow-black">
+      <section className="safe-sheet-panel confirm-sheet-in relative w-full max-w-md rounded-t-3xl border border-white/10 bg-[#141414] px-5 pb-5 shadow-2xl shadow-black">
         <div className="flex justify-center py-3">
           <div className="h-1 w-9 rounded-full bg-white/15" />
         </div>

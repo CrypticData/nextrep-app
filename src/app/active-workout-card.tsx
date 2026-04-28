@@ -56,7 +56,7 @@ export function ActiveWorkoutCard({
 
   return (
     <>
-      <div className="shrink-0 px-5 pb-2 pt-1">
+      <div className="safe-floating-card shrink-0 pb-2 pt-1">
         <section className="grid min-h-[72px] grid-cols-[minmax(0,1fr)_40px] items-center gap-3 rounded-2xl bg-[#181818] px-3.5 py-3 ring-1 ring-white/10">
           <button
             type="button"

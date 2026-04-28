@@ -50,6 +50,8 @@ type ExistingWorkoutExercise = {
 
 type ExistingWorkoutSet = {
   id: string;
+  bodyweightValue: Prisma.Decimal | null;
+  bodyweightUnit: WeightUnit | null;
   checkedAt: Date | null;
 };
 
@@ -190,6 +192,8 @@ export async function editCompletedWorkout(
             sets: {
               select: {
                 id: true,
+                bodyweightValue: true,
+                bodyweightUnit: true,
                 checkedAt: true,
               },
             },
@@ -346,6 +350,7 @@ export async function editCompletedWorkout(
         exerciseType: persistedExercise.exerciseType,
         inputWeightUnit: persistedExercise.inputWeightUnit,
         sessionDefaultWeightUnit: session.defaultWeightUnit,
+        workoutStartedAt: payload.startedAt,
         workoutSessionExerciseId: persistedExercise.id,
       });
 
@@ -473,6 +478,7 @@ async function persistWorkoutSets(
     exerciseType,
     inputWeightUnit,
     sessionDefaultWeightUnit,
+    workoutStartedAt,
     workoutSessionExerciseId,
   }: {
     existingSetById: Map<string, ExistingWorkoutSet>;
@@ -480,6 +486,7 @@ async function persistWorkoutSets(
     exerciseType: ExerciseType;
     inputWeightUnit: WeightUnit | null;
     sessionDefaultWeightUnit: WeightUnit;
+    workoutStartedAt: Date;
     workoutSessionExerciseId: string;
   },
 ): Promise<
@@ -516,11 +523,16 @@ async function persistWorkoutSets(
   const persistedSets: PersistedSet[] = [];
 
   for (const [index, setInput] of retainedSetInputs.entries()) {
+    const existingSet = setInput.id
+      ? existingSetById.get(setInput.id) ?? null
+      : null;
     const effectiveWeight = await resolveEffectiveWeight(tx, {
       exerciseType,
+      existingSet,
       inputWeightUnit,
       sessionDefaultWeightUnit,
       setInput,
+      workoutStartedAt,
     });
 
     if ("kind" in effectiveWeight) {
@@ -537,7 +549,7 @@ async function persistWorkoutSets(
       rpe: setInput.rpe,
       checked: setInput.checked,
       checkedAt: setInput.checked
-        ? (setInput.id ? existingSetById.get(setInput.id)?.checkedAt ?? new Date() : new Date())
+        ? (existingSet ? existingSet.checkedAt ?? new Date() : new Date())
         : null,
       weightInputValue: effectiveWeight.data.inputValue,
       weightInputUnit: effectiveWeight.data.inputUnit,
@@ -589,14 +601,18 @@ async function resolveEffectiveWeight(
   tx: Prisma.TransactionClient,
   {
     exerciseType,
+    existingSet,
     inputWeightUnit,
     sessionDefaultWeightUnit,
     setInput,
+    workoutStartedAt,
   }: {
     exerciseType: ExerciseType;
+    existingSet: ExistingWorkoutSet | null;
     inputWeightUnit: WeightUnit | null;
     sessionDefaultWeightUnit: WeightUnit;
     setInput: EditWorkoutSetInput;
+    workoutStartedAt: Date;
   },
 ): Promise<
   | { ok: true; data: EffectiveWeight }
@@ -605,9 +621,11 @@ async function resolveEffectiveWeight(
   const reps = setInput.reps;
 
   if (exerciseType === "bodyweight_reps") {
-    const bodyweight = await findLatestBodyweightInUnit(
+    const bodyweight = await findWorkoutBodyweightInUnit(
       tx,
+      existingSet,
       sessionDefaultWeightUnit,
+      workoutStartedAt,
     );
 
     return {
@@ -656,9 +674,11 @@ async function resolveEffectiveWeight(
     };
   }
 
-  const bodyweight = await findLatestBodyweightInUnit(
+  const bodyweight = await findWorkoutBodyweightInUnit(
     tx,
+    existingSet,
     sessionDefaultWeightUnit,
+    workoutStartedAt,
   );
   const externalLoad = normalizedValue ?? new Prisma.Decimal(0);
 
@@ -692,11 +712,16 @@ async function resolveEffectiveWeight(
   };
 }
 
-async function findLatestBodyweightInUnit(
+async function findWorkoutBodyweightInUnit(
   tx: Prisma.TransactionClient,
+  existingSet: ExistingWorkoutSet | null,
   targetUnit: WeightUnit,
+  workoutStartedAt: Date,
 ) {
-  const latestBodyweight = await tx.bodyweightRecord.findFirst({
+  const workoutBodyweight = await tx.bodyweightRecord.findFirst({
+    where: {
+      measuredAt: { lte: workoutStartedAt },
+    },
     orderBy: [{ measuredAt: "desc" }, { createdAt: "desc" }],
     select: {
       value: true,
@@ -704,11 +729,15 @@ async function findLatestBodyweightInUnit(
     },
   });
 
-  if (!latestBodyweight) {
+  if (workoutBodyweight) {
+    return convertWeight(workoutBodyweight.value, workoutBodyweight.unit, targetUnit);
+  }
+
+  if (!existingSet?.bodyweightValue || !existingSet.bodyweightUnit) {
     return null;
   }
 
-  return convertWeight(latestBodyweight.value, latestBodyweight.unit, targetUnit);
+  return convertWeight(existingSet.bodyweightValue, existingSet.bodyweightUnit, targetUnit);
 }
 
 function recalculateSetNumbering(
@@ -1171,7 +1200,7 @@ function readNullableRpe(
     return { ok: true, data: null };
   }
 
-  if (!rawValue || !/^\d+(\.\d)?$/.test(rawValue)) {
+  if (!rawValue || !/^\d+(\.\d{1,2})?$/.test(rawValue)) {
     return { ok: false, message: `${field} must be between 1 and 10 in 0.5 steps.` };
   }
 

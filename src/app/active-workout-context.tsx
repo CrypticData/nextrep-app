@@ -31,13 +31,22 @@ type ActiveWorkoutContextValue = {
   error: string | null;
   isLoading: boolean;
   offsetMs: number | null;
-  openLiveRequest: number;
+  openLiveRequest: OpenLiveRequest;
   refresh: (options?: {
     suppressError?: boolean;
   }) => Promise<ActiveWorkoutSession | null>;
-  requestOpenLive: () => void;
+  requestOpenLive: (options?: OpenLiveRequestOptions) => void;
   session: ActiveWorkoutSession | null;
   setSession: (session: ActiveWorkoutSession | null) => void;
+};
+
+type OpenLiveRequest = {
+  sequence: number;
+  scrollToWorkoutExerciseId: string | null;
+};
+
+type OpenLiveRequestOptions = {
+  scrollToWorkoutExerciseId?: string;
 };
 
 const ActiveWorkoutContext = createContext<ActiveWorkoutContextValue | null>(
@@ -49,7 +58,10 @@ export function ActiveWorkoutProvider({ children }: { children: ReactNode }) {
   const [offsetMs, setOffsetMs] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
-  const [openLiveRequest, setOpenLiveRequest] = useState(0);
+  const [openLiveRequest, setOpenLiveRequest] = useState<OpenLiveRequest>({
+    sequence: 0,
+    scrollToWorkoutExerciseId: null,
+  });
 
   const replaceSession = useCallback(
     (nextSession: ActiveWorkoutSession | null) => {
@@ -99,16 +111,28 @@ export function ActiveWorkoutProvider({ children }: { children: ReactNode }) {
     () => ({
       clear: () => {
         replaceSession(null);
-        setOpenLiveRequest(0);
+        setOpenLiveRequest({
+          sequence: 0,
+          scrollToWorkoutExerciseId: null,
+        });
       },
-      consumeOpenLiveRequest: () => setOpenLiveRequest(0),
+      consumeOpenLiveRequest: () =>
+        setOpenLiveRequest((currentRequest) => ({
+          ...currentRequest,
+          sequence: 0,
+          scrollToWorkoutExerciseId: null,
+        })),
       error,
       isLoading: !hasLoaded,
       openLiveRequest,
       offsetMs,
       refresh,
-      requestOpenLive: () =>
-        setOpenLiveRequest((currentRequest) => currentRequest + 1),
+      requestOpenLive: (options = {}) =>
+        setOpenLiveRequest((currentRequest) => ({
+          sequence: currentRequest.sequence + 1,
+          scrollToWorkoutExerciseId:
+            options.scrollToWorkoutExerciseId ?? null,
+        })),
       session,
       setSession: replaceSession,
     }),

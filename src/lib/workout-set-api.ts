@@ -774,7 +774,7 @@ function readNullableRpe(
     return { ok: true, data: null };
   }
 
-  if (!rawValue || !/^\d+(\.\d)?$/.test(rawValue)) {
+  if (!rawValue || !/^\d+(\.\d{1,2})?$/.test(rawValue)) {
     return { ok: false, message: "rpe must be between 1 and 10 in 0.5 steps." };
   }
 
