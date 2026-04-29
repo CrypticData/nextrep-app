@@ -1961,7 +1961,7 @@ function ExerciseDragHandle({
     <button
       ref={setActivatorNodeRef}
       type="button"
-      className={`flex min-w-0 flex-1 touch-none items-center gap-3 rounded-2xl text-left transition active:scale-[0.99] ${
+      className={`flex min-w-0 flex-1 select-none touch-none items-center gap-3 rounded-2xl text-left transition [-webkit-touch-callout:none] active:scale-[0.99] ${
         isDragging
           ? "cursor-grabbing bg-white/[0.08]"
           : "cursor-grab hover:bg-white/[0.04]"
@@ -1971,7 +1971,7 @@ function ExerciseDragHandle({
       aria-label="Reorder exercise"
     >
       <ExerciseThumb name={exerciseName} size="sm" />
-      <h2 className="min-w-0 flex-1 break-words text-lg font-semibold leading-snug text-white">
+      <h2 className="min-w-0 flex-1 select-none break-words text-lg font-semibold leading-snug text-white">
         {exerciseName}
       </h2>
     </button>
