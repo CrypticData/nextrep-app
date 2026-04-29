@@ -30,6 +30,7 @@ type ActiveWorkoutContextValue = {
   consumeOpenLiveRequest: () => void;
   error: string | null;
   isLoading: boolean;
+  lastScrollTop: number | null;
   offsetMs: number | null;
   openLiveRequest: OpenLiveRequest;
   refresh: (options?: {
@@ -37,6 +38,7 @@ type ActiveWorkoutContextValue = {
   }) => Promise<ActiveWorkoutSession | null>;
   requestOpenLive: (options?: OpenLiveRequestOptions) => void;
   session: ActiveWorkoutSession | null;
+  setLastScrollTop: (scrollTop: number | null) => void;
   setSession: (session: ActiveWorkoutSession | null) => void;
 };
 
@@ -58,6 +60,7 @@ export function ActiveWorkoutProvider({ children }: { children: ReactNode }) {
   const [offsetMs, setOffsetMs] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [lastScrollTop, setLastScrollTop] = useState<number | null>(null);
   const [openLiveRequest, setOpenLiveRequest] = useState<OpenLiveRequest>({
     sequence: 0,
     scrollToWorkoutExerciseId: null,
@@ -115,6 +118,7 @@ export function ActiveWorkoutProvider({ children }: { children: ReactNode }) {
           sequence: 0,
           scrollToWorkoutExerciseId: null,
         });
+        setLastScrollTop(null);
       },
       consumeOpenLiveRequest: () =>
         setOpenLiveRequest((currentRequest) => ({
@@ -124,6 +128,7 @@ export function ActiveWorkoutProvider({ children }: { children: ReactNode }) {
         })),
       error,
       isLoading: !hasLoaded,
+      lastScrollTop,
       openLiveRequest,
       offsetMs,
       refresh,
@@ -134,11 +139,13 @@ export function ActiveWorkoutProvider({ children }: { children: ReactNode }) {
             options.scrollToWorkoutExerciseId ?? null,
         })),
       session,
+      setLastScrollTop,
       setSession: replaceSession,
     }),
     [
       error,
       hasLoaded,
+      lastScrollTop,
       offsetMs,
       openLiveRequest,
       refresh,

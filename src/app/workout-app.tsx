@@ -132,6 +132,7 @@ type SortableHandleProps = {
 };
 
 const SET_SAVE_DEBOUNCE_MS = 350;
+const EXERCISE_NOTES_SAVE_DEBOUNCE_MS = 800;
 
 export function WorkoutApp() {
   const toast = useToast();
@@ -441,8 +442,15 @@ function LiveWorkout({
 }) {
   const router = useRouter();
   const toast = useToast();
-  const { clear, offsetMs, refresh } = useActiveWorkout();
+  const {
+    clear,
+    lastScrollTop,
+    offsetMs,
+    refresh,
+    setLastScrollTop,
+  } = useActiveWorkout();
   const elapsedSeconds = useElapsedSeconds(session.started_at);
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const [workoutExercises, setWorkoutExercises] = useState<
     WorkoutSessionExercise[]
   >([]);
@@ -888,7 +896,14 @@ function LiveWorkout({
       sortWorkoutExercises(
         currentExercises.map((workoutExercise) =>
           workoutExercise.id === workoutExerciseId
-            ? { ...workoutExercise, input_weight_unit: weightUnit }
+            ? {
+                ...workoutExercise,
+                input_weight_unit: weightUnit,
+                sets: workoutExercise.sets.map((set) => ({
+                  ...set,
+                  weight_input_unit: weightUnit,
+                })),
+              }
             : workoutExercise,
         ),
       ),
@@ -1049,7 +1064,7 @@ function LiveWorkout({
       noteSaveTimersRef.current.delete(workoutExerciseId);
       syncDebouncedNoteTimerCount();
       void saveWorkoutExerciseNotes(workoutExerciseId, notes);
-    }, 500);
+    }, EXERCISE_NOTES_SAVE_DEBOUNCE_MS);
 
     noteSaveTimersRef.current.set(workoutExerciseId, timeoutId);
     syncDebouncedNoteTimerCount();
@@ -1169,6 +1184,11 @@ function LiveWorkout({
     );
   }
 
+  function handleMinimize() {
+    setLastScrollTop(getLiveWorkoutScrollTop(rootRef.current));
+    onMinimize();
+  }
+
   async function handleDiscardInvalidRowsAndFinish() {
     setIsDiscardingInvalidRows(true);
     setFinishError(null);
@@ -1286,16 +1306,45 @@ function LiveWorkout({
     [session.default_weight_unit, workoutExercises],
   );
 
+  useEffect(() => {
+    if (
+      scrollToWorkoutExerciseId ||
+      lastScrollTop === null ||
+      isLoadingWorkoutExercises ||
+      workoutExercisesError
+    ) {
+      return;
+    }
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      const scrollContainer = getLiveWorkoutScrollContainer(rootRef.current);
+
+      if (scrollContainer) {
+        scrollContainer.scrollTop = lastScrollTop;
+      }
+
+      setLastScrollTop(null);
+    });
+
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [
+    isLoadingWorkoutExercises,
+    lastScrollTop,
+    scrollToWorkoutExerciseId,
+    setLastScrollTop,
+    workoutExercisesError,
+  ]);
+
   return (
     <>
-      <div className="space-y-4">
+      <div ref={rootRef} className="space-y-4">
         <LiveWorkoutStickyHeader
           duration={formatElapsedWords(elapsedSeconds)}
           failedSaveCount={saveQueueState.failed.size}
           isFinishing={isFinishing}
           isSaving={saveQueueState.inFlight.size > 0}
           isSyncBusy={isSyncBusy}
-          onMinimize={onMinimize}
+          onMinimize={handleMinimize}
           onFinish={() => void handleFinishWorkout()}
           onRetryFailedSaves={retryFailedSaves}
           onSyncBusyTap={showSyncBusyToast}
@@ -2530,6 +2579,14 @@ function WeightUnitSheet({
   );
 }
 
+function getLiveWorkoutScrollTop(element: HTMLElement | null) {
+  return getLiveWorkoutScrollContainer(element)?.scrollTop ?? 0;
+}
+
+function getLiveWorkoutScrollContainer(element: HTMLElement | null) {
+  return element?.closest("main") ?? null;
+}
+
 function RpeSheet({
   currentRpe,
   onClose,
@@ -2665,14 +2722,14 @@ function BottomSheet({
   onClose: () => void;
 }) {
   return (
-    <div className="safe-sheet fixed inset-0 z-50 flex items-end justify-center bg-black/70">
+    <div className="safe-sheet fixed inset-0 z-50 flex items-end justify-center bg-black/70 [transform:translateZ(0)] [will-change:transform]">
       <button
         type="button"
         className="absolute inset-0 cursor-default"
         onClick={onClose}
         aria-label="Close sheet"
       />
-      <section className="safe-sheet-panel relative flex max-h-[90dvh] w-full max-w-md flex-col rounded-t-[28px] border border-white/10 bg-[#141414] shadow-2xl shadow-black">
+      <section className="safe-sheet-panel relative flex max-h-[90dvh] w-full max-w-md flex-col rounded-t-[28px] border border-white/10 bg-[#141414] shadow-2xl shadow-black [transform:translateZ(0)] [will-change:transform]">
         {children}
       </section>
     </div>

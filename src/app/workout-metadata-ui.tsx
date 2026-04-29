@@ -91,7 +91,7 @@ export function WorkoutMetadataSection({
         placeholder="Workout title"
       />
 
-      <div className="mt-5 grid min-h-[64px] grid-cols-[minmax(116px,1.35fr)_minmax(74px,0.85fr)_minmax(52px,0.55fr)] gap-3 border-b border-white/10 pb-5">
+      <div className="mt-5 grid min-h-[64px] grid-cols-[minmax(84px,0.75fr)_minmax(112px,1fr)_minmax(40px,max-content)] gap-x-4 border-b border-white/10 pb-5">
         <MetadataStatButton
           accent
           label="Duration"
