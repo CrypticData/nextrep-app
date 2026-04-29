@@ -499,6 +499,8 @@ function LiveWorkout({
   const highlightedWorkoutExerciseTimerRef = useRef<number | null>(null);
   const exerciseOrderRequestRef = useRef(0);
   const addSetNonceRef = useRef(0);
+  const unitRequestRef = useRef(0);
+  const latestUnitRequestRef = useRef<Map<string, number>>(new Map());
   const [highlightedWorkoutExerciseId, setHighlightedWorkoutExerciseId] =
     useState<string | null>(null);
   const exerciseOrderIds = useMemo(
@@ -894,6 +896,10 @@ function LiveWorkout({
     weightUnit: "lbs" | "kg",
   ) {
     setSetEditError(null);
+    const requestId = unitRequestRef.current + 1;
+
+    unitRequestRef.current = requestId;
+    latestUnitRequestRef.current.set(workoutExerciseId, requestId);
 
     setWorkoutExercisesAndRef((currentExercises) =>
       sortWorkoutExercises(
@@ -935,6 +941,11 @@ function LiveWorkout({
           },
         ),
       onSuccess: (response) => {
+        if (latestUnitRequestRef.current.get(workoutExerciseId) !== requestId) {
+          return;
+        }
+
+        latestUnitRequestRef.current.delete(workoutExerciseId);
         const updatedWorkoutExercise = response as WorkoutSessionExercise;
 
         setWorkoutExercisesAndRef((currentExercises) =>
@@ -2578,12 +2589,12 @@ function WeightUnitSheet({
             <button
               type="button"
               onClick={() => onSelect(option.value)}
-              disabled={isSaving}
+              aria-busy={isSaving}
               key={`${option.label}-${index}`}
               className={
                 isSelected
-                  ? "grid min-h-14 w-full grid-cols-[1fr_28px] items-center rounded-2xl border border-emerald-400/40 bg-emerald-400/10 px-4 text-left transition active:scale-[0.99] disabled:cursor-wait disabled:opacity-60"
-                  : "grid min-h-14 w-full grid-cols-[1fr_28px] items-center rounded-2xl border border-white/10 bg-[#232323] px-4 text-left transition active:scale-[0.99] disabled:cursor-wait disabled:opacity-60"
+                  ? "grid min-h-14 w-full grid-cols-[1fr_28px] items-center rounded-2xl border border-emerald-400/40 bg-emerald-400/10 px-4 text-left transition active:scale-[0.99]"
+                  : "grid min-h-14 w-full grid-cols-[1fr_28px] items-center rounded-2xl border border-white/10 bg-[#232323] px-4 text-left transition active:scale-[0.99]"
               }
             >
               <span className="text-base font-semibold text-white">
