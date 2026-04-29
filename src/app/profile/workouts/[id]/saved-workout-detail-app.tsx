@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AppShell } from "@/app/app-shell";
 import { ConfirmSheet } from "@/app/confirm-sheet";
+import { ExerciseThumb } from "@/app/exercise-thumb";
 
 type ExerciseType =
   | "weight_reps"
@@ -160,9 +161,9 @@ export function SavedWorkoutDetailApp({ workoutId }: { workoutId: string }) {
         </button>
       }
       backHref="/profile"
-      mainClassName="safe-main-x pb-6 pt-4"
+      mainClassName="safe-main-x pb-8 pt-4"
       subpage
-      title="Workout Details"
+      title={workout?.name ?? "Workout Details"}
     >
       {loadState === "loading" ? <WorkoutDetailSkeleton /> : null}
 
@@ -251,55 +252,62 @@ function WorkoutActionsSheet({
 
 function WorkoutDetail({ workout }: { workout: CompletedWorkoutDetail }) {
   return (
-    <div className="space-y-6">
-      <section className="border-b border-white/[0.06] pb-5">
-        <h2 className="text-lg font-bold leading-tight text-white">
-          {workout.name}
+    <div className="space-y-5">
+      <dl className="grid grid-cols-3 overflow-hidden rounded-2xl border border-white/[0.08] bg-[#1a1a1a]">
+        <WorkoutDetailStat
+          label="Duration"
+          value={formatDuration(workout.duration_seconds)}
+        />
+        <WorkoutDetailStat
+          label="Volume"
+          value={formatVolume(workout.volume.value, workout.volume.unit)}
+        />
+        <WorkoutDetailStat
+          isLast
+          label="Started"
+          value={formatDateTime(workout.started_at)}
+        />
+      </dl>
+
+      {workout.description ? (
+        <p className="whitespace-pre-wrap text-[13px] leading-[1.6] text-zinc-500">
+          {workout.description}
+        </p>
+      ) : null}
+
+      <section>
+        <h2 className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.09em] text-zinc-500">
+          Exercises
         </h2>
-        {workout.description ? (
-          <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-zinc-500">
-            {workout.description}
-          </p>
-        ) : null}
-        <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3">
-          <WorkoutDetailMetric
-            label="Started"
-            value={formatDateTime(workout.started_at)}
-          />
-          <WorkoutDetailMetric
-            label="Completed"
-            value={formatDateTime(workout.ended_at)}
-          />
-          <WorkoutDetailMetric
-            label="Duration"
-            value={formatDuration(workout.duration_seconds)}
-          />
-          <WorkoutDetailMetric
-            label="Volume"
-            value={formatVolume(workout.volume.value, workout.volume.unit)}
-          />
-        </dl>
+        <div className="space-y-5">
+          {workout.exercises.map((exercise) => (
+            <ExerciseSection exercise={exercise} key={exercise.id} />
+          ))}
+        </div>
       </section>
-      {workout.exercises.map((exercise) => (
-        <ExerciseSection exercise={exercise} key={exercise.id} />
-      ))}
     </div>
   );
 }
 
-function WorkoutDetailMetric({
+function WorkoutDetailStat({
+  isLast = false,
   label,
   value,
 }: {
+  isLast?: boolean;
   label: string;
   value: string;
 }) {
   return (
-    <div>
-      <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-zinc-600">
+    <div
+      className={`min-w-0 px-3 py-3.5 text-center ${
+        isLast ? "" : "border-r border-white/[0.06]"
+      }`}
+    >
+      <dt className="text-[10px] font-semibold uppercase tracking-[0.07em] text-zinc-600">
         {label}
       </dt>
-      <dd className="mt-1 truncate text-sm font-semibold text-zinc-200">
+      <dd className="mt-1 truncate text-[13px] font-bold leading-tight text-white">
         {value}
       </dd>
     </div>
@@ -311,27 +319,35 @@ function ExerciseSection({
 }: {
   exercise: CompletedWorkoutExercise;
 }) {
+  const thumbName =
+    exercise.primary_muscle_group_name_snapshot ??
+    exercise.exercise_name_snapshot;
+
   return (
-    <article className="border-b border-white/[0.06] pb-5 last:border-b-0">
-      <div className="space-y-3">
-        <h2 className="text-lg font-bold leading-tight text-white">
-          {exercise.exercise_name_snapshot}
-        </h2>
-        {exercise.notes ? (
-          <p className="whitespace-pre-wrap text-xs leading-5 text-zinc-500">
-            {exercise.notes}
-          </p>
-        ) : null}
-        <div className="grid grid-cols-[64px_1fr] items-center gap-3 px-1 pt-2 text-[10px] font-bold uppercase tracking-[0.12em] text-zinc-500">
-          <span>Set</span>
-          <span>Weight &amp; Reps</span>
+    <article>
+      <div className="mb-2.5 flex items-center gap-3">
+        <ExerciseThumb name={thumbName} size="sm" />
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-[15px] font-bold text-white">
+            {exercise.exercise_name_snapshot}
+          </h3>
+          {exercise.notes ? (
+            <p className="mt-0.5 truncate text-xs text-zinc-500">
+              {exercise.notes}
+            </p>
+          ) : null}
         </div>
       </div>
 
-      <div className="mt-2">
+      <div className="overflow-hidden rounded-[14px] border border-white/[0.08] bg-[#1a1a1a]">
+        <div className="flex items-center border-b border-white/[0.06] px-3.5 py-2 text-[11px] font-bold uppercase tracking-[0.07em] text-zinc-600">
+          <div className="w-8 shrink-0">Set</div>
+          <div className="min-w-0 flex-1">Weight &amp; Reps</div>
+        </div>
         {exercise.sets.map((set) => (
           <SetRow
             exercise={exercise}
+            isLast={set.id === exercise.sets[exercise.sets.length - 1]?.id}
             key={set.id}
             set={set}
           />
@@ -343,18 +359,26 @@ function ExerciseSection({
 
 function SetRow({
   exercise,
+  isLast,
   set,
 }: {
   exercise: CompletedWorkoutExercise;
+  isLast: boolean;
   set: CompletedWorkoutSet;
 }) {
   return (
-    <div className="grid min-h-12 grid-cols-[64px_1fr] items-center gap-3 px-1 py-2">
-      <div className={`text-base font-bold ${getSetLabelClassName(set.set_type)}`}>
+    <div
+      className={`flex items-center px-3.5 py-2.5 ${
+        isLast ? "" : "border-b border-white/[0.06]"
+      }`}
+    >
+      <div
+        className={`w-8 shrink-0 text-sm font-bold ${getSetLabelClassName(set.set_type)}`}
+      >
         {formatSetLabel(set)}
       </div>
-      <div className="min-w-0">
-        <p className="truncate text-base font-medium text-zinc-100">
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[15px] font-semibold text-zinc-50">
           {formatSetSummary(set, exercise.exercise_type)}
         </p>
       </div>
@@ -364,15 +388,34 @@ function SetRow({
 
 function WorkoutDetailSkeleton() {
   return (
-    <div className="space-y-10">
-      <div className="space-y-5">
-        <div className="h-8 w-4/5 animate-pulse rounded-lg bg-white/[0.05]" />
-        <div className="h-4 w-2/5 animate-pulse rounded-lg bg-white/[0.04]" />
-        <div className="h-40 animate-pulse bg-white/[0.035]" />
+    <div className="space-y-5">
+      <div className="grid grid-cols-3 overflow-hidden rounded-2xl border border-white/[0.06] bg-[#1a1a1a]">
+        {[0, 1, 2].map((index) => (
+          <div
+            className={`px-3 py-3.5 ${
+              index === 2 ? "" : "border-r border-white/[0.06]"
+            }`}
+            key={index}
+          >
+            <div className="mx-auto h-2.5 w-12 animate-pulse rounded bg-white/[0.06]" />
+            <div className="mx-auto mt-2 h-3.5 w-16 animate-pulse rounded bg-white/[0.08]" />
+          </div>
+        ))}
       </div>
+      <div className="h-10 w-full animate-pulse rounded-lg bg-white/[0.035]" />
       <div className="space-y-5">
-        <div className="h-8 w-3/4 animate-pulse rounded-lg bg-white/[0.05]" />
-        <div className="h-56 animate-pulse bg-white/[0.035]" />
+        {[0, 1, 2].map((index) => (
+          <div className="space-y-2.5" key={index}>
+            <div className="flex items-center gap-3">
+              <div className="h-[42px] w-[42px] animate-pulse rounded-full bg-white/[0.06]" />
+              <div className="min-w-0 flex-1">
+                <div className="h-4 w-3/5 animate-pulse rounded bg-white/[0.06]" />
+                <div className="mt-2 h-3 w-2/5 animate-pulse rounded bg-white/[0.04]" />
+              </div>
+            </div>
+            <div className="h-32 animate-pulse rounded-[14px] border border-white/[0.06] bg-white/[0.035]" />
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -438,13 +481,13 @@ function formatSetSummary(
   set: CompletedWorkoutSet,
   exerciseType: ExerciseType | null,
 ) {
-  const baseSummary = `${formatSetLoad(set, exerciseType)} x ${set.reps}`;
+  const baseSummary = `${formatSetLoad(set, exerciseType)} × ${set.reps}`;
 
   if (set.rpe === null) {
     return baseSummary;
   }
 
-  return `${baseSummary} @ ${formatDecimal(set.rpe)} rpe`;
+  return `${baseSummary} @ ${formatDecimal(set.rpe)} RPE`;
 }
 
 function formatSetLoad(
@@ -505,7 +548,10 @@ function formatDecimal(value: number) {
     return "0";
   }
 
-  return Number.isInteger(value) ? value.toString() : value.toFixed(2);
+  return value.toLocaleString("en-US", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+  });
 }
 
 type IconProps = {

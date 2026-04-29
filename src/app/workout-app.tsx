@@ -1754,10 +1754,10 @@ function LiveWorkoutStickyHeader({
         <FailedSavesBanner count={failedSaveCount} onRetry={onRetryFailedSaves} />
       ) : null}
 
-      <div className="grid min-h-[68px] grid-cols-[minmax(118px,1.35fr)_minmax(74px,0.85fr)_minmax(38px,0.45fr)] gap-2 border-b border-white/10 bg-[#101010] px-5 py-3">
+      <div className="grid min-h-[56px] grid-cols-[minmax(84px,0.75fr)_minmax(112px,1fr)_minmax(40px,max-content)] gap-x-4 border-b border-white/10 bg-[#101010] px-5 py-2">
         <LiveWorkoutStat label="Duration" value={duration} accent />
         <LiveWorkoutStat label="Volume" value={volume} />
-        <LiveWorkoutStat label="Sets" value={sets.toString()} />
+        <LiveWorkoutStat align="right" label="Sets" value={sets.toString()} />
       </div>
     </div>
   );
@@ -1765,20 +1765,22 @@ function LiveWorkoutStickyHeader({
 
 function LiveWorkoutStat({
   accent = false,
+  align = "left",
   label,
   value,
 }: {
   accent?: boolean;
+  align?: "left" | "right";
   label: string;
   value: string;
 }) {
   return (
-    <div className="min-w-0">
-      <p className="text-sm font-medium tracking-normal text-zinc-500">
+    <div className={`min-w-0 ${align === "right" ? "text-right" : ""}`}>
+      <p className="text-xs font-medium tracking-normal text-zinc-500">
         {label}
       </p>
       <p
-        className={`mt-2 whitespace-nowrap text-[1.35rem] font-semibold leading-none tracking-normal ${
+        className={`mt-1 whitespace-nowrap text-[1.12rem] font-semibold leading-none tracking-normal ${
           accent ? "text-emerald-300" : "text-white"
         }`}
       >

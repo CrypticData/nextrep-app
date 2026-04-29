@@ -12,6 +12,7 @@ import {
 import { useActiveWorkout } from "./active-workout-context";
 import { AppShell } from "./app-shell";
 import { ConfirmSheet } from "./confirm-sheet";
+import { ExerciseThumb } from "./exercise-thumb";
 
 type Reference = {
   id: string;
@@ -1425,29 +1426,6 @@ function MultiSelectChips({
   );
 }
 
-function ExerciseThumb({
-  name,
-  size = "md",
-}: {
-  name: string;
-  size?: "md" | "lg";
-}) {
-  const palette = getThumbPalette(name);
-  const sizeClass = size === "lg" ? "h-16 w-16 text-lg" : "h-12 w-12 text-base";
-
-  return (
-    <div
-      className={`${sizeClass} flex shrink-0 items-center justify-center rounded-full font-bold`}
-      style={{
-        backgroundColor: palette.background,
-        color: palette.foreground,
-      }}
-    >
-      {name.slice(0, 1).toUpperCase()}
-    </div>
-  );
-}
-
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
 
@@ -1644,22 +1622,6 @@ function sortExercises(exercises: Exercise[]) {
   return [...exercises].sort((first, second) =>
     first.name.localeCompare(second.name, undefined, { sensitivity: "base" }),
   );
-}
-
-function getThumbPalette(name: string) {
-  const palettes = [
-    { background: "rgba(16, 185, 129, 0.16)", foreground: "#6ee7b7" },
-    { background: "rgba(59, 130, 246, 0.16)", foreground: "#93c5fd" },
-    { background: "rgba(244, 114, 182, 0.16)", foreground: "#f9a8d4" },
-    { background: "rgba(234, 179, 8, 0.16)", foreground: "#fde68a" },
-    { background: "rgba(168, 85, 247, 0.16)", foreground: "#d8b4fe" },
-  ];
-  const index = Array.from(name).reduce(
-    (sum, character) => sum + character.charCodeAt(0),
-    0,
-  );
-
-  return palettes[index % palettes.length];
 }
 
 type IconProps = {
