@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { ActiveWorkoutCard } from "./active-workout-card";
 import { useActiveWorkout } from "./active-workout-context";
+import { ToastProvider } from "./toast";
 
 type AppShellProps = {
   action?: ReactNode;
@@ -120,6 +121,7 @@ export function AppShell({
         {showFloatingCard ? <ActiveWorkoutCard session={session} /> : null}
 
         <BottomNav />
+        <ToastProvider />
       </div>
     </div>
   );

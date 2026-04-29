@@ -23,6 +23,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { AppShell } from "@/app/app-shell";
 import { ConfirmSheet } from "@/app/confirm-sheet";
+import { useToast } from "@/app/toast";
 import {
   WorkoutMetadataHeader,
   WorkoutMetadataSection,
@@ -164,6 +165,7 @@ let nextDraftId = 0;
 
 export function EditWorkoutApp({ workoutId }: { workoutId: string }) {
   const router = useRouter();
+  const toast = useToast();
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [draft, setDraft] = useState<DraftWorkout | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -313,6 +315,7 @@ export function EditWorkoutApp({ workoutId }: { workoutId: string }) {
         ),
       };
     });
+    toast.success("Exercise order updated");
   }
 
   function handleAddSet(exerciseClientId: string) {
@@ -440,10 +443,13 @@ export function EditWorkoutApp({ workoutId }: { workoutId: string }) {
         },
       );
 
+      toast.success("Workout saved");
       router.push(detailHref);
       router.refresh();
     } catch (error) {
-      setSaveError(getErrorMessage(error));
+      const message = getErrorMessage(error);
+      setSaveError(message);
+      toast.error(message);
     } finally {
       setIsSaving(false);
     }
@@ -846,7 +852,9 @@ function AutosizeNotesTextarea({
       onChange={onChange}
       rows={1}
       maxLength={2000}
-      className="max-h-40 min-h-9 w-full resize-none overflow-hidden rounded-xl border border-white/10 bg-[#101010] px-3 py-2 text-sm font-medium leading-5 text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-300/40"
+      autoCapitalize="sentences"
+      autoCorrect="on"
+      className="max-h-40 min-h-9 w-full resize-none overflow-hidden rounded-xl border border-white/10 bg-[#101010] px-3 py-2 text-base font-medium leading-6 text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-300/40"
       placeholder={placeholder}
     />
   );
@@ -890,6 +898,10 @@ function EditableSetRow({
             <>
               <input
                 inputMode="decimal"
+                pattern="[0-9]*[.]?[0-9]*"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
                 value={set.weightValue}
                 onChange={(event) => onUpdate({ weightValue: event.target.value })}
                 placeholder="0"
@@ -918,6 +930,10 @@ function EditableSetRow({
 
         <input
           inputMode="numeric"
+          pattern="[0-9]*"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
           value={set.repsValue}
           onChange={(event) => onUpdate({ repsValue: event.target.value })}
           placeholder="0"
@@ -1219,6 +1235,10 @@ function ExercisePickerSheet({
             <input
               value={search}
               onChange={(event) => onSearchChange(event.target.value)}
+              inputMode="search"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="none"
               placeholder="Search exercise"
               className="min-w-0 flex-1 bg-transparent text-base text-white outline-none placeholder:text-zinc-600"
             />

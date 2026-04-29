@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { AppShell } from "@/app/app-shell";
 import { ConfirmSheet } from "@/app/confirm-sheet";
 import { ExerciseThumb } from "@/app/exercise-thumb";
+import { useToast } from "@/app/toast";
 
 type ExerciseType =
   | "weight_reps"
@@ -59,6 +60,7 @@ type LoadState = "loading" | "ready" | "error";
 
 export function SavedWorkoutDetailApp({ workoutId }: { workoutId: string }) {
   const router = useRouter();
+  const toast = useToast();
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [workout, setWorkout] = useState<CompletedWorkoutDetail | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -93,13 +95,16 @@ export function SavedWorkoutDetailApp({ workoutId }: { workoutId: string }) {
       });
 
       if (response.status === 204) {
+        toast.success("Workout deleted");
         router.push("/profile");
         return;
       }
 
       throw new Error(await readErrorResponse(response));
     } catch (error) {
-      setDeleteError(getErrorMessage(error));
+      const message = getErrorMessage(error);
+      setDeleteError(message);
+      toast.error(message);
       setIsDeleting(false);
     }
   }
@@ -199,6 +204,7 @@ export function SavedWorkoutDetailApp({ workoutId }: { workoutId: string }) {
           isConfirming={isDeleting}
           onCancel={handleCancelDelete}
           onConfirm={() => void handleDeleteWorkout()}
+          onRetry={() => void handleDeleteWorkout()}
           title="Delete this workout?"
         />
       ) : null}

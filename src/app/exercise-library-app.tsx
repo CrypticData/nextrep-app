@@ -13,6 +13,7 @@ import { useActiveWorkout } from "./active-workout-context";
 import { AppShell } from "./app-shell";
 import { ConfirmSheet } from "./confirm-sheet";
 import { ExerciseThumb } from "./exercise-thumb";
+import { useToast } from "./toast";
 
 type Reference = {
   id: string;
@@ -101,6 +102,7 @@ export function ExerciseLibraryApp({
   mode?: ExerciseLibraryMode;
 }) {
   const router = useRouter();
+  const toast = useToast();
   const {
     refresh: refreshActiveWorkout,
     requestOpenLive,
@@ -213,9 +215,12 @@ export function ExerciseLibraryApp({
       requestOpenLive({
         scrollToWorkoutExerciseId: createdWorkoutExercise.id,
       });
+      toast.success(`${exercise.name} added`);
       router.push("/");
     } catch (error) {
-      setActionError(getErrorMessage(error));
+      const message = getErrorMessage(error);
+      setActionError(message);
+      toast.error(message);
     } finally {
       setAddingExerciseId(null);
     }
@@ -249,6 +254,7 @@ export function ExerciseLibraryApp({
     setSelectedExerciseId(isAddToWorkoutMode ? null : exercise.id);
     setModalMode(null);
     setActionError(null);
+    toast.success(editingExercise ? "Exercise saved" : "Exercise created");
 
     if (isAddToWorkoutMode && !editingExercise) {
       await addExerciseToActiveWorkout(exercise);
@@ -295,8 +301,11 @@ export function ExerciseLibraryApp({
       );
       setSelectedExerciseId(null);
       setDeleteExerciseTarget(null);
+      toast.success("Exercise deleted");
     } catch (error) {
-      setActionError(getErrorMessage(error));
+      const message = getErrorMessage(error);
+      setActionError(message);
+      toast.error(message);
     } finally {
       setDeletingExerciseId(null);
     }
@@ -360,6 +369,8 @@ export function ExerciseLibraryApp({
             actionError={actionError}
             exercise={selectedExercise}
           />
+        ) : selectedExerciseId && isLoading ? (
+          <ExerciseDetailSkeleton />
         ) : (
           <ExerciseList
             equipmentFilterId={equipmentFilterId}
@@ -424,10 +435,36 @@ export function ExerciseLibraryApp({
             }
           }}
           onConfirm={() => void handleDeleteExercise(deleteExerciseTarget)}
+          onRetry={() => void handleDeleteExercise(deleteExerciseTarget)}
           title={`Delete ${deleteExerciseTarget.name}?`}
         />
       ) : null}
     </>
+  );
+}
+
+function ExerciseDetailSkeleton() {
+  return (
+    <div className="space-y-5 pt-4">
+      <div className="rounded-3xl border border-white/10 bg-[#181818] p-4">
+        <div className="flex items-start gap-4">
+          <div className="h-16 w-16 animate-pulse rounded-2xl bg-white/[0.05]" />
+          <div className="flex-1 space-y-3 pt-1">
+            <div className="h-6 w-2/3 animate-pulse rounded-full bg-white/[0.05]" />
+            <div className="h-4 w-1/3 animate-pulse rounded-full bg-white/[0.04]" />
+          </div>
+        </div>
+        <div className="mt-5 grid grid-cols-1 gap-3">
+          {[0, 1, 2, 3].map((item) => (
+            <div
+              className="h-12 animate-pulse rounded-2xl bg-white/[0.04]"
+              key={item}
+            />
+          ))}
+        </div>
+      </div>
+      <div className="h-32 animate-pulse rounded-2xl bg-white/[0.04]" />
+    </div>
   );
 }
 
@@ -559,6 +596,10 @@ function ExerciseListControls({
         <input
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
+          inputMode="search"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="none"
           placeholder="Search exercise"
           className="min-w-0 flex-1 bg-transparent text-base text-white outline-none placeholder:text-zinc-600"
         />
@@ -1127,6 +1168,7 @@ function ExerciseModal({
   onClose: () => void;
   onSave: (payload: ExercisePayload) => Promise<void>;
 }) {
+  const toast = useToast();
   const editingExercise = mode.kind === "edit" ? mode.exercise : null;
   const [name, setName] = useState(editingExercise?.name ?? "");
   const [description, setDescription] = useState(
@@ -1174,7 +1216,9 @@ function ExerciseModal({
         secondary_muscle_group_ids: secondaryMuscleGroupIds,
       });
     } catch (submitError) {
-      setError(getErrorMessage(submitError));
+      const message = getErrorMessage(submitError);
+      setError(message);
+      toast.error(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -1234,6 +1278,8 @@ function ExerciseModal({
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
+              autoCapitalize="words"
+              autoCorrect="off"
               placeholder="e.g. Bench Press"
               className="h-12 w-full rounded-2xl border border-white/10 bg-[#232323] px-4 text-base text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-400/70"
             />
@@ -1243,6 +1289,8 @@ function ExerciseModal({
             <textarea
               value={description}
               onChange={(event) => setDescription(event.target.value)}
+              autoCapitalize="sentences"
+              autoCorrect="on"
               placeholder="Instructions, cues, setup notes"
               rows={3}
               className="w-full resize-none rounded-2xl border border-white/10 bg-[#232323] px-4 py-3 text-base leading-6 text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-400/70"

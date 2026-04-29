@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useActiveWorkout, useElapsedSeconds } from "./active-workout-context";
 import type { ActiveWorkoutSession } from "./active-workout-context";
 import { ConfirmSheet } from "./confirm-sheet";
+import { useToast } from "./toast";
 import { MAX_WORKOUT_DURATION_SECONDS } from "@/lib/workout-duration";
 
 export function ActiveWorkoutCard({
@@ -13,6 +14,7 @@ export function ActiveWorkoutCard({
   session: ActiveWorkoutSession;
 }) {
   const router = useRouter();
+  const toast = useToast();
   const { clear, requestOpenLive } = useActiveWorkout();
   const elapsedSeconds = useElapsedSeconds(session.started_at);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -47,8 +49,11 @@ export function ActiveWorkoutCard({
 
       clear();
       setIsConfirmOpen(false);
+      toast.success("Workout discarded");
     } catch (error) {
-      setDiscardError(getErrorMessage(error));
+      const message = getErrorMessage(error);
+      setDiscardError(message);
+      toast.error(message);
     } finally {
       setIsDiscarding(false);
     }
@@ -112,6 +117,7 @@ export function ActiveWorkoutCard({
             }
           }}
           onConfirm={() => void discardWorkout()}
+          onRetry={() => void discardWorkout()}
           title="Discard this active workout?"
         />
       ) : null}

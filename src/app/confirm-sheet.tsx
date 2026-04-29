@@ -9,6 +9,7 @@ type ConfirmSheetProps = {
   isConfirming?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
+  onRetry?: () => void;
   title: string;
 };
 
@@ -21,6 +22,7 @@ export function ConfirmSheet({
   isConfirming = false,
   onCancel,
   onConfirm,
+  onRetry,
   title,
 }: ConfirmSheetProps) {
   return (
@@ -47,6 +49,16 @@ export function ConfirmSheet({
         {error ? (
           <div className="mt-4 rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-100">
             {error}
+            {onRetry ? (
+              <button
+                type="button"
+                onClick={onRetry}
+                disabled={isConfirming}
+                className="mt-3 h-10 w-full rounded-xl bg-red-100 px-4 text-sm font-bold text-red-950 transition active:scale-[0.99] disabled:cursor-wait disabled:opacity-60"
+              >
+                Try again
+              </button>
+            ) : null}
           </div>
         ) : null}
 

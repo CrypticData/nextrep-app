@@ -51,6 +51,9 @@ export function SettingsApp() {
           </div>
         ) : null}
 
+        {isLoading ? <SettingsSkeleton /> : null}
+
+        {!isLoading ? (
         <section>
           <h2 className="mb-3 text-sm font-semibold text-zinc-500">General</h2>
           <div className="overflow-hidden rounded-3xl border border-white/[0.08] bg-[#181818]">
@@ -58,18 +61,22 @@ export function SettingsApp() {
               href="/profile/settings/units"
               icon={<ScaleIcon className="h-5 w-5" />}
               label="Units"
-              value={
-                isLoading
-                  ? "Loading"
-                  : settings
-                    ? formatUnit(settings.weight_unit)
-                    : "Unavailable"
-              }
+              value={settings ? formatUnit(settings.weight_unit) : "Unavailable"}
             />
           </div>
         </section>
+        ) : null}
       </div>
     </AppShell>
+  );
+}
+
+function SettingsSkeleton() {
+  return (
+    <section>
+      <div className="mb-3 h-5 w-20 animate-pulse rounded-full bg-white/[0.04]" />
+      <div className="h-16 animate-pulse rounded-3xl bg-white/[0.04]" />
+    </section>
   );
 }
 

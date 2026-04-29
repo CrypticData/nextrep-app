@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AppShell } from "../../../app-shell";
+import { useToast } from "../../../toast";
 
 type WeightUnit = "lbs" | "kg";
 
@@ -11,6 +12,7 @@ type Settings = {
 };
 
 export function UnitsSettingsApp() {
+  const toast = useToast();
   const [unit, setUnit] = useState<WeightUnit>("lbs");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -55,9 +57,12 @@ export function UnitsSettingsApp() {
         body: JSON.stringify({ weight_unit: nextUnit }),
       });
       setUnit(settings.weight_unit);
+      toast.success("Units updated");
     } catch (saveError) {
+      const message = getErrorMessage(saveError);
       setUnit(previousUnit);
-      setError(getErrorMessage(saveError));
+      setError(message);
+      toast.error(message);
     } finally {
       setIsSaving(false);
     }
@@ -77,6 +82,9 @@ export function UnitsSettingsApp() {
           </div>
         ) : null}
 
+        {isLoading ? <UnitsSkeleton /> : null}
+
+        {!isLoading ? (
         <section>
           <h2 className="mb-3 text-sm font-semibold text-zinc-500">Weight</h2>
           <div className="grid gap-3">
@@ -94,8 +102,21 @@ export function UnitsSettingsApp() {
             />
           </div>
         </section>
+        ) : null}
       </div>
     </AppShell>
+  );
+}
+
+function UnitsSkeleton() {
+  return (
+    <section>
+      <div className="mb-3 h-5 w-16 animate-pulse rounded-full bg-white/[0.04]" />
+      <div className="grid gap-3">
+        <div className="h-16 animate-pulse rounded-3xl bg-white/[0.04]" />
+        <div className="h-16 animate-pulse rounded-3xl bg-white/[0.035]" />
+      </div>
+    </section>
   );
 }
 

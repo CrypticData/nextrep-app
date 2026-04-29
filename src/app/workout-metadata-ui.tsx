@@ -85,6 +85,8 @@ export function WorkoutMetadataSection({
         value={name}
         onChange={(event) => onNameChange(event.target.value)}
         maxLength={120}
+        autoCapitalize="sentences"
+        autoCorrect="on"
         className="w-full bg-transparent text-[2.05rem] font-semibold leading-tight tracking-normal text-white outline-none placeholder:text-zinc-700 focus:placeholder:text-zinc-600"
         placeholder="Workout title"
       />
@@ -121,6 +123,8 @@ export function WorkoutMetadataSection({
         <textarea
           value={description}
           onChange={(event) => onDescriptionChange(event.target.value)}
+          autoCapitalize="sentences"
+          autoCorrect="on"
           rows={5}
           className="mt-2 w-full resize-none rounded-[22px] border border-white/10 bg-[#181818] px-4 py-4 text-base font-medium leading-6 text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-[#1d1d1d]"
           placeholder="How did your workout go?"

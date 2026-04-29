@@ -25,6 +25,7 @@ import { useActiveWorkout, useElapsedSeconds } from "./active-workout-context";
 import type { ActiveWorkoutSession } from "./active-workout-context";
 import { AppShell } from "./app-shell";
 import { ConfirmSheet } from "./confirm-sheet";
+import { useToast } from "./toast";
 import {
   WorkoutMetadataHeader,
   WorkoutMetadataSection,
@@ -133,6 +134,7 @@ type SortableHandleProps = {
 const SET_SAVE_DEBOUNCE_MS = 350;
 
 export function WorkoutApp() {
+  const toast = useToast();
   const {
     clear,
     consumeOpenLiveRequest,
@@ -229,8 +231,11 @@ export function WorkoutApp() {
       setScreen("start");
       setSuccessMessage(null);
       setSaveWorkoutDraft(null);
+      toast.success("Workout discarded");
     } catch (discardError) {
-      setError(getErrorMessage(discardError));
+      const message = getErrorMessage(discardError);
+      setError(message);
+      toast.error(message);
     } finally {
       setIsDiscarding(false);
     }
@@ -241,7 +246,7 @@ export function WorkoutApp() {
     setScreen("start");
     setSaveWorkoutDraft(null);
     setSuccessMessage("Workout saved");
-    window.setTimeout(() => setSuccessMessage(null), 2000);
+    toast.success("Workout saved");
   }
 
   const isActiveWorkoutScreen = screen === "live" || screen === "save";
@@ -326,6 +331,7 @@ export function WorkoutApp() {
             }
           }}
           onConfirm={() => void handleDiscardWorkout()}
+          onRetry={() => void handleDiscardWorkout()}
           title="Discard this active workout?"
         />
       ) : null}
@@ -434,6 +440,7 @@ function LiveWorkout({
   session: WorkoutSession;
 }) {
   const router = useRouter();
+  const toast = useToast();
   const { clear, offsetMs, refresh } = useActiveWorkout();
   const elapsedSeconds = useElapsedSeconds(session.started_at);
   const [workoutExercises, setWorkoutExercises] = useState<
@@ -462,7 +469,6 @@ function LiveWorkout({
   }, [saveQueueState.inFlight, saveQueueState.pending]);
   const [setEditError, setSetEditError] = useState<string | null>(null);
   const [finishError, setFinishError] = useState<string | null>(null);
-  const [syncBusyToast, setSyncBusyToast] = useState<string | null>(null);
   const [debouncedNoteTimerCount, setDebouncedNoteTimerCount] = useState(0);
   const [isFinishing, setIsFinishing] = useState(false);
   const [isInvalidRowsSheetOpen, setIsInvalidRowsSheetOpen] = useState(false);
@@ -512,10 +518,17 @@ function LiveWorkout({
   const isSyncBusy =
     isSaveQueueBusy || debouncedNoteTimerCount > 0;
 
+  useEffect(() => {
+    const firstFailure = saveQueueState.failed.values().next().value;
+
+    if (firstFailure) {
+      toast.error(firstFailure.error);
+    }
+  }, [saveQueueState.failed, toast]);
+
   const showSyncBusyToast = useCallback(() => {
-    setSyncBusyToast("Wait for changes to save before finishing.");
-    window.setTimeout(() => setSyncBusyToast(null), 1800);
-  }, []);
+    toast.error("Wait for changes to save before finishing.");
+  }, [toast]);
 
   const syncDebouncedNoteTimerCount = useCallback(() => {
     setDebouncedNoteTimerCount(noteSaveTimersRef.current.size);
@@ -1130,6 +1143,7 @@ function LiveWorkout({
         setWorkoutExercisesAndRef((currentExercises) =>
           applyWorkoutExerciseOrder(currentExercises, savedOrderIds),
         );
+        toast.success("Exercise order saved");
       },
     });
   }
@@ -1303,8 +1317,6 @@ function LiveWorkout({
 
         {finishError ? <FinishError message={finishError} /> : null}
 
-        {syncBusyToast ? <SyncBusyToast message={syncBusyToast} /> : null}
-
         {!isLoadingWorkoutExercises &&
         !workoutExercisesError &&
         workoutExercises.length === 0 ? (
@@ -1424,6 +1436,7 @@ function LiveWorkout({
             }
           }}
           onConfirm={() => void handleDiscardInvalidRowsAndFinish()}
+          onRetry={() => void handleDiscardInvalidRowsAndFinish()}
           title={`Discard ${invalidWeightedSetCount} unfinished ${invalidWeightedSetCount === 1 ? "row" : "rows"} to finish?`}
         />
       ) : null}
@@ -1446,6 +1459,7 @@ function SaveWorkoutScreen({
   onSaved: () => void;
   session: WorkoutSession;
 }) {
+  const toast = useToast();
   const [name, setName] = useState(draft.name);
   const [description, setDescription] = useState(draft.description);
   const [startedAtLocal, setStartedAtLocal] = useState(draft.startedAtLocal);
@@ -1511,7 +1525,9 @@ function SaveWorkoutScreen({
 
       onSaved();
     } catch (error) {
-      setSaveError(getErrorMessage(error));
+      const message = getErrorMessage(error);
+      setSaveError(message);
+      toast.error(message);
     } finally {
       setIsSaving(false);
     }
@@ -1654,14 +1670,6 @@ function FailedSavesBanner({
 function FinishError({ message }: { message: string }) {
   return (
     <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm font-semibold leading-6 text-amber-100">
-      {message}
-    </div>
-  );
-}
-
-function SyncBusyToast({ message }: { message: string }) {
-  return (
-    <div className="fixed inset-x-5 bottom-24 z-50 mx-auto max-w-sm rounded-2xl border border-amber-300/25 bg-amber-300/15 px-4 py-3 text-center text-sm font-semibold text-amber-100 shadow-xl shadow-black/40">
       {message}
     </div>
   );
@@ -2100,7 +2108,9 @@ function AutosizeNotesTextarea({
       onChange={onChange}
       rows={1}
       maxLength={2000}
-      className={`max-h-40 min-h-9 w-full resize-none overflow-hidden rounded-xl border border-white/10 px-3 py-2 text-sm font-medium leading-5 text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-300/40 ${className}`}
+      autoCapitalize="sentences"
+      autoCorrect="on"
+      className={`max-h-40 min-h-9 w-full resize-none overflow-hidden rounded-xl border border-white/10 px-3 py-2 text-base font-medium leading-6 text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-300/40 ${className}`}
       placeholder={placeholder}
     />
   );
@@ -2240,6 +2250,10 @@ function WorkoutSetEditorRow({
           {showWeightInput ? (
             <input
               inputMode="decimal"
+              pattern="[0-9]*[.]?[0-9]*"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
               value={weightValue}
               onBlur={() => void commitSetValues()}
               onChange={(event) => setWeightValue(event.target.value)}
@@ -2256,6 +2270,10 @@ function WorkoutSetEditorRow({
 
         <input
           inputMode="numeric"
+          pattern="[0-9]*"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
           value={repsValue}
           onBlur={() => void commitSetValues()}
           onChange={(event) => setRepsValue(event.target.value)}

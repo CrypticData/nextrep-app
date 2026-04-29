@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { AppShell } from "../../app-shell";
 import { ConfirmSheet } from "../../confirm-sheet";
+import { useToast } from "../../toast";
 
 type WeightUnit = "lbs" | "kg";
 
@@ -35,6 +36,7 @@ type ModalMode =
   | { kind: "edit"; record: BodyweightRecord };
 
 export function MeasuresApp() {
+  const toast = useToast();
   const [records, setRecords] = useState<BodyweightRecord[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -96,6 +98,7 @@ export function MeasuresApp() {
     });
     setModalMode(null);
     setActionError(null);
+    toast.success(editingRecord ? "Bodyweight updated" : "Bodyweight added");
   }
 
   async function handleDeleteRecord(record: BodyweightRecord) {
@@ -112,8 +115,11 @@ export function MeasuresApp() {
         ),
       );
       setDeleteRecordTarget(null);
+      toast.success("Bodyweight deleted");
     } catch (error) {
-      setActionError(getErrorMessage(error));
+      const message = getErrorMessage(error);
+      setActionError(message);
+      toast.error(message);
     } finally {
       setDeletingRecordId(null);
     }
@@ -182,6 +188,7 @@ export function MeasuresApp() {
             }
           }}
           onConfirm={() => void handleDeleteRecord(deleteRecordTarget)}
+          onRetry={() => void handleDeleteRecord(deleteRecordTarget)}
           title="Delete this bodyweight record?"
         />
       ) : null}
@@ -353,6 +360,7 @@ function BodyweightModal({
   onSave: (payload: BodyweightPayload) => Promise<void>;
   weightUnit: WeightUnit;
 }) {
+  const toast = useToast();
   const editingRecord = mode.kind === "edit" ? mode.record : null;
   const [value, setValue] = useState(editingRecord?.display_weight ?? "");
   const [measuredAt, setMeasuredAt] = useState(
@@ -388,7 +396,9 @@ function BodyweightModal({
         measured_at: dateInputToIsoDate(measuredAt),
       });
     } catch (submitError) {
-      setError(getErrorMessage(submitError));
+      const message = getErrorMessage(submitError);
+      setError(message);
+      toast.error(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -442,6 +452,10 @@ function BodyweightModal({
                 value={value}
                 onChange={(event) => setValue(event.target.value)}
                 inputMode="decimal"
+                pattern="[0-9]*[.]?[0-9]*"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
                 placeholder="138.89"
                 className="h-12 min-w-0 rounded-2xl border border-white/10 bg-[#232323] px-4 text-base text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-400/70"
               />
