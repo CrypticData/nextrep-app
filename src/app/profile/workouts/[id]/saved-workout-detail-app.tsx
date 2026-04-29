@@ -168,7 +168,7 @@ export function SavedWorkoutDetailApp({ workoutId }: { workoutId: string }) {
       backHref="/profile"
       mainClassName="safe-main-x pb-8 pt-4"
       subpage
-      title={workout?.name ?? "Workout Details"}
+      title="Workout Details"
     >
       {loadState === "loading" ? <WorkoutDetailSkeleton /> : null}
 
@@ -257,22 +257,33 @@ function WorkoutActionsSheet({
 }
 
 function WorkoutDetail({ workout }: { workout: CompletedWorkoutDetail }) {
+  const totalSetCount = workout.exercises.reduce(
+    (count, exercise) => count + exercise.sets.length,
+    0,
+  );
+
   return (
-    <div className="space-y-5">
-      <dl className="grid grid-cols-3 overflow-hidden rounded-2xl border border-white/[0.08] bg-[#1a1a1a]">
-        <WorkoutDetailStat
-          label="Duration"
+    <div className="space-y-6">
+      <header className="space-y-1">
+        <h1 className="text-3xl font-bold leading-tight text-white">
+          {workout.name}
+        </h1>
+        <p className="text-sm font-medium text-zinc-500">
+          {formatDateTime(workout.started_at)}
+        </p>
+      </header>
+
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto] gap-x-4">
+        <WorkoutHeaderStat
+          label="Time"
           value={formatDuration(workout.duration_seconds)}
         />
-        <WorkoutDetailStat
+        <WorkoutHeaderStat
           label="Volume"
           value={formatVolume(workout.volume.value, workout.volume.unit)}
         />
-        <WorkoutDetailStat
-          isLast
-          label="Started"
-          value={formatDateTime(workout.started_at)}
-        />
+        <WorkoutHeaderStat label="Sets" value={String(totalSetCount)} />
+        <WorkoutHeaderStat label="Records" value="-" />
       </dl>
 
       {workout.description ? (
@@ -295,25 +306,17 @@ function WorkoutDetail({ workout }: { workout: CompletedWorkoutDetail }) {
   );
 }
 
-function WorkoutDetailStat({
-  isLast = false,
+function WorkoutHeaderStat({
   label,
   value,
 }: {
-  isLast?: boolean;
   label: string;
   value: string;
 }) {
   return (
-    <div
-      className={`min-w-0 px-3 py-3.5 text-center ${
-        isLast ? "" : "border-r border-white/[0.06]"
-      }`}
-    >
-      <dt className="text-[10px] font-semibold uppercase tracking-[0.07em] text-zinc-600">
-        {label}
-      </dt>
-      <dd className="mt-1 truncate text-[13px] font-bold leading-tight text-white">
+    <div className="min-w-0">
+      <dt className="text-[12px] font-medium text-zinc-500">{label}</dt>
+      <dd className="mt-1 text-lg font-bold leading-tight text-white">
         {value}
       </dd>
     </div>
@@ -513,17 +516,26 @@ function formatSetLoad(
 
 function formatDateTime(value: string) {
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) {
     return "-";
   }
 
-  return date.toLocaleString("en-US", {
+  const weekday = date.toLocaleString("en-US", { weekday: "short" });
+  const monthDay = date.toLocaleString("en-US", {
     month: "short",
     day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
   });
+  const year = date.getFullYear();
+  const time = date
+    .toLocaleString("en-US", {
+      hour: "numeric",
+      hour12: true,
+      minute: "2-digit",
+    })
+    .replace(/\s/g, "")
+    .toLowerCase();
+
+  return `${weekday}, ${monthDay}, ${year} · ${time}`;
 }
 
 function formatDuration(totalSeconds: number) {
