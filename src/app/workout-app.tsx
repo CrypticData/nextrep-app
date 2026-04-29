@@ -134,6 +134,7 @@ type SortableHandleProps = {
 
 const SET_SAVE_DEBOUNCE_MS = 350;
 const EXERCISE_NOTES_SAVE_DEBOUNCE_MS = 800;
+const LBS_PER_KG = 2.2046226218;
 
 export function WorkoutApp() {
   const toast = useToast();
@@ -903,6 +904,13 @@ function LiveWorkout({
                 input_weight_unit: weightUnit,
                 sets: workoutExercise.sets.map((set) => ({
                   ...set,
+                  weight_input_value: convertWorkoutSetInputValue(
+                    set.weight_input_value,
+                    set.weight_input_unit ??
+                      workoutExercise.input_weight_unit ??
+                      session.default_weight_unit,
+                    weightUnit,
+                  ),
                   weight_input_unit: weightUnit,
                 })),
               }
@@ -3172,6 +3180,27 @@ function formatDecimal(value: string) {
   }
 
   return Number.isInteger(parsed) ? parsed.toString() : parsed.toFixed(2);
+}
+
+function convertWorkoutSetInputValue(
+  value: string | null,
+  fromUnit: "lbs" | "kg",
+  toUnit: "lbs" | "kg",
+) {
+  if (value === null || fromUnit === toUnit) {
+    return value;
+  }
+
+  const parsedValue = Number(value);
+
+  if (!Number.isFinite(parsedValue)) {
+    return value;
+  }
+
+  const convertedValue =
+    fromUnit === "kg" ? parsedValue * LBS_PER_KG : parsedValue / LBS_PER_KG;
+
+  return convertedValue.toFixed(2);
 }
 
 function formatSetSummary(

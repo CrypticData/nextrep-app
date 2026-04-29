@@ -3,7 +3,7 @@ import type { ExerciseType, WeightUnit } from "@/generated/prisma/enums";
 import type { WorkoutSessionExerciseGetPayload } from "@/generated/prisma/models/WorkoutSessionExercise";
 import { isUuid } from "@/lib/exercise-api";
 import { prisma } from "@/lib/prisma";
-import { readWeightUnit } from "@/lib/weight-units";
+import { convertWeight, readWeightUnit } from "@/lib/weight-units";
 
 export const workoutSetSelect = {
   id: true,
@@ -317,7 +317,16 @@ export async function updateWorkoutExerciseWeightUnit(
         },
         workoutSession: {
           select: {
+            defaultWeightUnit: true,
             status: true,
+          },
+        },
+        inputWeightUnit: true,
+        sets: {
+          select: {
+            id: true,
+            weightInputValue: true,
+            weightInputUnit: true,
           },
         },
       },
@@ -340,6 +349,35 @@ export async function updateWorkoutExerciseWeightUnit(
       update: { weightUnit },
       select: { id: true },
     });
+
+    for (const set of workoutExercise.sets) {
+      if (set.weightInputValue === null) {
+        await tx.workoutSet.update({
+          where: { id: set.id },
+          data: { weightInputUnit: weightUnit },
+          select: { id: true },
+        });
+        continue;
+      }
+
+      const sourceUnit =
+        set.weightInputUnit ??
+        workoutExercise.inputWeightUnit ??
+        workoutExercise.workoutSession.defaultWeightUnit;
+
+      await tx.workoutSet.update({
+        where: { id: set.id },
+        data: {
+          weightInputValue: convertWeight(
+            set.weightInputValue,
+            sourceUnit,
+            weightUnit,
+          ),
+          weightInputUnit: weightUnit,
+        },
+        select: { id: true },
+      });
+    }
 
     const updatedWorkoutExercise = await tx.workoutSessionExercise.update({
       where: { id: workoutExerciseId },
