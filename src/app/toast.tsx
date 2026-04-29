@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { readAppSettingsCache } from "./app-settings-cache";
 
 type ToastTone = "success" | "error";
 
@@ -44,7 +45,15 @@ export function useToast() {
   return useMemo(
     () => ({
       error: (message: string) => emitToast(message, "error"),
-      success: (message: string) => emitToast(message, "success"),
+      success: (message: string) => {
+        const settingsCache = readAppSettingsCache();
+
+        if (settingsCache?.silenceSuccessToasts ?? true) {
+          return;
+        }
+
+        emitToast(message, "success");
+      },
     }),
     [],
   );

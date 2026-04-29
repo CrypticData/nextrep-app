@@ -9,16 +9,19 @@ type SettingsResponse = {
   id: number;
   weight_unit: WeightUnit;
   default_weight_unit: WeightUnit;
+  silence_success_toasts: boolean;
 };
 
 function toSettingsResponse(settings: {
   id: number;
   defaultWeightUnit: WeightUnit;
+  silenceSuccessToasts: boolean;
 }): SettingsResponse {
   return {
     id: settings.id,
     weight_unit: settings.defaultWeightUnit,
     default_weight_unit: settings.defaultWeightUnit,
+    silence_success_toasts: settings.silenceSuccessToasts,
   };
 }
 
@@ -26,16 +29,57 @@ function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 });
 }
 
-function readSettingsPatchBody(value: unknown): WeightUnit | null {
+type SettingsPatch = {
+  silenceSuccessToasts?: boolean;
+  weightUnit?: WeightUnit;
+};
+
+function readSettingsPatchBody(value: unknown) {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return null;
+    return { ok: false as const, message: "Request body must be an object." };
   }
 
   const body = value as Record<string, unknown>;
-  const rawUnit =
-    "weight_unit" in body ? body.weight_unit : body.default_weight_unit;
+  const patch: SettingsPatch = {};
 
-  return readWeightUnit(rawUnit);
+  if ("weight_unit" in body || "default_weight_unit" in body) {
+    const rawUnit =
+      "weight_unit" in body ? body.weight_unit : body.default_weight_unit;
+    const weightUnit = readWeightUnit(rawUnit);
+
+    if (!weightUnit) {
+      return {
+        ok: false as const,
+        message: 'weight_unit must be "lbs" or "kg".',
+      };
+    }
+
+    patch.weightUnit = weightUnit;
+  }
+
+  if ("silence_success_toasts" in body) {
+    if (typeof body.silence_success_toasts !== "boolean") {
+      return {
+        ok: false as const,
+        message: "silence_success_toasts must be a boolean.",
+      };
+    }
+
+    patch.silenceSuccessToasts = body.silence_success_toasts;
+  }
+
+  if (
+    patch.weightUnit === undefined &&
+    patch.silenceSuccessToasts === undefined
+  ) {
+    return {
+      ok: false as const,
+      message:
+        'Request body must include "weight_unit" or "silence_success_toasts".',
+    };
+  }
+
+  return { ok: true as const, patch };
 }
 
 export async function GET() {
@@ -44,6 +88,7 @@ export async function GET() {
     select: {
       id: true,
       defaultWeightUnit: true,
+      silenceSuccessToasts: true,
     },
   });
 
@@ -59,18 +104,26 @@ export async function PATCH(request: Request) {
     return badRequest("Request body must be valid JSON.");
   }
 
-  const weightUnit = readSettingsPatchBody(body);
+  const parsedBody = readSettingsPatchBody(body);
 
-  if (!weightUnit) {
-    return badRequest('weight_unit must be "lbs" or "kg".');
+  if (!parsedBody.ok) {
+    return badRequest(parsedBody.message);
   }
 
   const settings = await prisma.appSettings.update({
     where: { id: 1 },
-    data: { defaultWeightUnit: weightUnit },
+    data: {
+      ...(parsedBody.patch.weightUnit
+        ? { defaultWeightUnit: parsedBody.patch.weightUnit }
+        : {}),
+      ...(parsedBody.patch.silenceSuccessToasts !== undefined
+        ? { silenceSuccessToasts: parsedBody.patch.silenceSuccessToasts }
+        : {}),
+    },
     select: {
       id: true,
       defaultWeightUnit: true,
+      silenceSuccessToasts: true,
     },
   });
 

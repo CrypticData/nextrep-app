@@ -30,10 +30,11 @@ enum ExerciseType {
 }
 
 model AppSettings {
-  id                Int        @id @default(1)
-  defaultWeightUnit WeightUnit @default(lbs) @map("default_weight_unit")
-  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                   Int        @id @default(1)
+  defaultWeightUnit    WeightUnit @default(lbs) @map("default_weight_unit")
+  silenceSuccessToasts Boolean    @default(true) @map("silence_success_toasts")
+  createdAt            DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("app_settings")
 }

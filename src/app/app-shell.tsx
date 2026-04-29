@@ -2,7 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect } from "react";
 import type { ReactNode } from "react";
+import {
+  readAppSettingsCache,
+  writeAppSettingsCache,
+} from "./app-settings-cache";
 import { ActiveWorkoutCard } from "./active-workout-card";
 import { useActiveWorkout } from "./active-workout-context";
 import { ToastProvider } from "./toast";
@@ -20,6 +25,10 @@ type AppShellProps = {
   mainClassName?: string;
   subpage?: boolean;
   title: string;
+};
+
+type AppSettingsResponse = {
+  silence_success_toasts: boolean;
 };
 
 const navItems = [
@@ -49,6 +58,37 @@ export function AppShell({
     (pathname === "/" || pathname === "/profile");
   const showBottomNav =
     !hideBottomNav && (pathname === "/" || pathname === "/profile");
+
+  useEffect(() => {
+    if (readAppSettingsCache()) {
+      return;
+    }
+
+    const abortController = new AbortController();
+
+    async function hydrateAppSettingsCache() {
+      try {
+        const response = await fetch("/api/settings", {
+          signal: abortController.signal,
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const settings = (await response.json()) as AppSettingsResponse;
+        writeAppSettingsCache({
+          silenceSuccessToasts: settings.silence_success_toasts,
+        });
+      } catch {
+        // Cache hydration is best-effort; errors still show without it.
+      }
+    }
+
+    void hydrateAppSettingsCache();
+
+    return () => abortController.abort();
+  }, []);
 
   return (
     <div className="h-svh overflow-hidden bg-[#050505] text-zinc-50">

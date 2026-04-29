@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { writeAppSettingsCache } from "../../app-settings-cache";
 import { AppShell } from "../../app-shell";
 
 type WeightUnit = "lbs" | "kg";
@@ -9,6 +10,7 @@ type WeightUnit = "lbs" | "kg";
 type Settings = {
   weight_unit: WeightUnit;
   default_weight_unit: WeightUnit;
+  silence_success_toasts: boolean;
 };
 
 export function SettingsApp() {
@@ -21,7 +23,11 @@ export function SettingsApp() {
     setError(null);
 
     try {
-      setSettings(await fetchJson<Settings>("/api/settings"));
+      const appSettings = await fetchJson<Settings>("/api/settings");
+      setSettings(appSettings);
+      writeAppSettingsCache({
+        silenceSuccessToasts: appSettings.silence_success_toasts,
+      });
     } catch (loadError) {
       setError(getErrorMessage(loadError));
     } finally {
@@ -62,6 +68,18 @@ export function SettingsApp() {
               icon={<ScaleIcon className="h-5 w-5" />}
               label="Units"
               value={settings ? formatUnit(settings.weight_unit) : "Unavailable"}
+            />
+            <SettingsRow
+              href="/profile/settings/notifications"
+              icon={<BellIcon className="h-5 w-5" />}
+              label="Notifications"
+              value={
+                settings
+                  ? settings.silence_success_toasts
+                    ? "Off"
+                    : "On"
+                  : "Unavailable"
+              }
             />
           </div>
         </section>
@@ -159,6 +177,20 @@ function ScaleIcon({ className }: IconProps) {
     <svg className={className} fill="none" viewBox="0 0 24 24" aria-hidden>
       <path
         d="M6 20h12M8 20l4-14 4 14M5 9h14M5 9l-3 5h6L5 9Zm14 0-3 5h6l-3-5ZM12 6V4"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+}
+
+function BellIcon({ className }: IconProps) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" aria-hidden>
+      <path
+        d="M15 17H9M18 10a6 6 0 0 0-12 0c0 3-1 5-2 6h16c-1-1-2-3-2-6ZM10 20a2 2 0 0 0 4 0"
         stroke="currentColor"
         strokeLinecap="round"
         strokeLinejoin="round"

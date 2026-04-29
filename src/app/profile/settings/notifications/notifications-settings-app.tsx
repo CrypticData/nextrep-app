@@ -5,17 +5,13 @@ import { writeAppSettingsCache } from "../../../app-settings-cache";
 import { AppShell } from "../../../app-shell";
 import { useToast } from "../../../toast";
 
-type WeightUnit = "lbs" | "kg";
-
 type Settings = {
-  weight_unit: WeightUnit;
-  default_weight_unit: WeightUnit;
   silence_success_toasts: boolean;
 };
 
-export function UnitsSettingsApp() {
+export function NotificationsSettingsApp() {
   const toast = useToast();
-  const [unit, setUnit] = useState<WeightUnit>("lbs");
+  const [showSuccessMessages, setShowSuccessMessages] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +22,7 @@ export function UnitsSettingsApp() {
 
     try {
       const settings = await fetchJson<Settings>("/api/settings");
-      setUnit(settings.weight_unit);
+      setShowSuccessMessages(!settings.silence_success_toasts);
       writeAppSettingsCache({
         silenceSuccessToasts: settings.silence_success_toasts,
       });
@@ -45,13 +41,15 @@ export function UnitsSettingsApp() {
     return () => window.clearTimeout(timeout);
   }, []);
 
-  async function handleSelectUnit(nextUnit: WeightUnit) {
-    if (nextUnit === unit || isSaving) {
+  async function handleSelectShowSuccessMessages(nextValue: boolean) {
+    if (nextValue === showSuccessMessages || isSaving) {
       return;
     }
 
-    const previousUnit = unit;
-    setUnit(nextUnit);
+    const previousValue = showSuccessMessages;
+    const nextSilenceSuccessToasts = !nextValue;
+
+    setShowSuccessMessages(nextValue);
     setIsSaving(true);
     setError(null);
 
@@ -59,16 +57,18 @@ export function UnitsSettingsApp() {
       const settings = await fetchJson<Settings>("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ weight_unit: nextUnit }),
+        body: JSON.stringify({
+          silence_success_toasts: nextSilenceSuccessToasts,
+        }),
       });
-      setUnit(settings.weight_unit);
+      setShowSuccessMessages(!settings.silence_success_toasts);
       writeAppSettingsCache({
         silenceSuccessToasts: settings.silence_success_toasts,
       });
-      toast.success("Units updated");
+      toast.success("Notifications updated");
     } catch (saveError) {
       const message = getErrorMessage(saveError);
-      setUnit(previousUnit);
+      setShowSuccessMessages(previousValue);
       setError(message);
       toast.error(message);
     } finally {
@@ -81,7 +81,7 @@ export function UnitsSettingsApp() {
       backHref="/profile/settings"
       backLabel="Back to settings"
       subpage
-      title="Units"
+      title="Notifications"
     >
       <div className="space-y-5 pb-24">
         {error ? (
@@ -90,36 +90,41 @@ export function UnitsSettingsApp() {
           </div>
         ) : null}
 
-        {isLoading ? <UnitsSkeleton /> : null}
+        {isLoading ? <NotificationsSkeleton /> : null}
 
         {!isLoading ? (
-        <section>
-          <h2 className="mb-3 text-sm font-semibold text-zinc-500">Weight</h2>
-          <div className="grid gap-3">
-            <UnitOption
-              disabled={isLoading || isSaving}
-              label="lbs"
-              onSelect={() => void handleSelectUnit("lbs")}
-              selected={unit === "lbs"}
-            />
-            <UnitOption
-              disabled={isLoading || isSaving}
-              label="kg"
-              onSelect={() => void handleSelectUnit("kg")}
-              selected={unit === "kg"}
-            />
-          </div>
-        </section>
+          <section>
+            <h2 className="mb-3 text-sm font-semibold text-zinc-500">
+              Success messages
+            </h2>
+            <div className="grid gap-3">
+              <NotificationOption
+                disabled={isLoading || isSaving}
+                label="Show success messages"
+                onSelect={() => void handleSelectShowSuccessMessages(true)}
+                selected={showSuccessMessages}
+              />
+              <NotificationOption
+                disabled={isLoading || isSaving}
+                label="Silence success messages"
+                onSelect={() => void handleSelectShowSuccessMessages(false)}
+                selected={!showSuccessMessages}
+              />
+            </div>
+            <p className="mt-4 text-sm leading-6 text-zinc-500">
+              Error messages always show, so you&apos;ll still know if something fails.
+            </p>
+          </section>
         ) : null}
       </div>
     </AppShell>
   );
 }
 
-function UnitsSkeleton() {
+function NotificationsSkeleton() {
   return (
     <section>
-      <div className="mb-3 h-5 w-16 animate-pulse rounded-full bg-white/[0.04]" />
+      <div className="mb-3 h-5 w-32 animate-pulse rounded-full bg-white/[0.04]" />
       <div className="grid gap-3">
         <div className="h-16 animate-pulse rounded-3xl bg-white/[0.04]" />
         <div className="h-16 animate-pulse rounded-3xl bg-white/[0.035]" />
@@ -128,14 +133,14 @@ function UnitsSkeleton() {
   );
 }
 
-function UnitOption({
+function NotificationOption({
   disabled,
   label,
   onSelect,
   selected,
 }: {
   disabled: boolean;
-  label: WeightUnit;
+  label: string;
   onSelect: () => void;
   selected: boolean;
 }) {
