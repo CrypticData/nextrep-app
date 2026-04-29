@@ -25,6 +25,7 @@ import { useActiveWorkout, useElapsedSeconds } from "./active-workout-context";
 import type { ActiveWorkoutSession } from "./active-workout-context";
 import { AppShell } from "./app-shell";
 import { ConfirmSheet } from "./confirm-sheet";
+import { ExerciseThumb } from "./exercise-thumb";
 import { useToast } from "./toast";
 import {
   WorkoutMetadataHeader,
@@ -1948,24 +1949,30 @@ function SortableWorkoutExerciseCard(props: WorkoutExerciseCardProps) {
 
 function ExerciseDragHandle({
   attributes,
+  exerciseName,
   isDragging,
   listeners,
   setActivatorNodeRef,
-}: SortableHandleProps) {
+}: SortableHandleProps & {
+  exerciseName: string;
+}) {
   return (
     <button
       ref={setActivatorNodeRef}
       type="button"
-      className={`flex h-11 w-9 shrink-0 touch-none items-center justify-center rounded-xl text-zinc-500 transition active:scale-95 ${
+      className={`flex min-w-0 flex-1 touch-none items-center gap-3 rounded-2xl text-left transition active:scale-[0.99] ${
         isDragging
-          ? "cursor-grabbing bg-white/[0.08] text-zinc-200"
-          : "cursor-grab hover:bg-white/[0.05] hover:text-zinc-300"
+          ? "cursor-grabbing bg-white/[0.08]"
+          : "cursor-grab hover:bg-white/[0.04]"
       }`}
       {...attributes}
       {...listeners}
       aria-label="Reorder exercise"
     >
-      <GripIcon className="h-5 w-5" />
+      <ExerciseThumb name={exerciseName} size="sm" />
+      <h2 className="min-w-0 flex-1 break-words text-lg font-semibold leading-snug text-white">
+        {exerciseName}
+      </h2>
     </button>
   );
 }
@@ -2011,12 +2018,10 @@ function WorkoutExerciseCard({
   return (
     <section className="-mx-5 border-y border-white/[0.07] bg-[#101010] py-4">
       <div className="flex items-start gap-2 px-5">
-        <ExerciseDragHandle {...dragHandleProps} />
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-lg font-semibold text-white">
-            {workoutExercise.exercise_name_snapshot}
-          </h2>
-        </div>
+        <ExerciseDragHandle
+          {...dragHandleProps}
+          exerciseName={workoutExercise.exercise_name_snapshot}
+        />
         <div className="flex shrink-0 items-center gap-1.5">
           <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-xs font-bold text-zinc-300">
             #{workoutExercise.order_index + 1}
@@ -2298,11 +2303,14 @@ function WorkoutSetEditorRow({
         <div className="flex justify-center">
           {showWeightInput ? (
             <input
+              name="set-weight-value"
               inputMode="decimal"
               pattern="[0-9]*[.]?[0-9]*"
               autoComplete="off"
               autoCorrect="off"
               autoCapitalize="off"
+              data-lpignore="true"
+              data-form-type="other"
               value={weightValue}
               onBlur={() => void commitSetValues()}
               onChange={(event) => setWeightValue(event.target.value)}
@@ -2318,11 +2326,14 @@ function WorkoutSetEditorRow({
         </div>
 
         <input
+          name="set-reps-value"
           inputMode="numeric"
           pattern="[0-9]*"
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
+          data-lpignore="true"
+          data-form-type="other"
           value={repsValue}
           onBlur={() => void commitSetValues()}
           onChange={(event) => setRepsValue(event.target.value)}
@@ -2333,7 +2344,10 @@ function WorkoutSetEditorRow({
 
         <button
           type="button"
+          name="set-rpe-picker"
           onClick={() => setIsRpeSheetOpen(true)}
+          data-lpignore="true"
+          data-form-type="other"
           className={
             set.rpe
               ? "mx-auto flex h-10 min-w-[52px] items-center justify-center rounded-xl bg-emerald-400/15 px-2 text-sm font-bold text-emerald-200 transition active:scale-95"
@@ -3297,24 +3311,6 @@ function MoreIcon({ className }: IconProps) {
       <circle cx="12" cy="5" r="2" fill="currentColor" />
       <circle cx="12" cy="12" r="2" fill="currentColor" />
       <circle cx="12" cy="19" r="2" fill="currentColor" />
-    </svg>
-  );
-}
-
-function GripIcon({ className }: IconProps) {
-  return (
-    <svg
-      className={className}
-      fill="none"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-    >
-      <path
-        d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="3"
-      />
     </svg>
   );
 }

@@ -449,6 +449,7 @@ function BodyweightModal({
           <FormField label="Bodyweight">
             <div className="grid grid-cols-[1fr_auto] gap-3">
               <input
+                name="bodyweight-value"
                 value={value}
                 onChange={(event) => setValue(event.target.value)}
                 inputMode="decimal"
@@ -456,6 +457,8 @@ function BodyweightModal({
                 autoComplete="off"
                 autoCorrect="off"
                 autoCapitalize="off"
+                data-lpignore="true"
+                data-form-type="other"
                 placeholder="138.89"
                 className="h-12 min-w-0 rounded-2xl border border-white/10 bg-[#232323] px-4 text-base text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-400/70"
               />

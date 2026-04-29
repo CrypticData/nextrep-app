@@ -23,6 +23,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { AppShell } from "@/app/app-shell";
 import { ConfirmSheet } from "@/app/confirm-sheet";
+import { ExerciseThumb } from "@/app/exercise-thumb";
 import { useToast } from "@/app/toast";
 import {
   WorkoutMetadataHeader,
@@ -700,24 +701,30 @@ function SortableEditableExerciseCard(props: EditableExerciseCardProps) {
 
 function ExerciseDragHandle({
   attributes,
+  exerciseName,
   isDragging,
   listeners,
   setActivatorNodeRef,
-}: SortableHandleProps) {
+}: SortableHandleProps & {
+  exerciseName: string;
+}) {
   return (
     <button
       ref={setActivatorNodeRef}
       type="button"
-      className={`flex h-11 w-9 shrink-0 touch-none items-center justify-center rounded-xl text-zinc-500 transition active:scale-95 ${
+      className={`flex min-w-0 flex-1 touch-none items-center gap-3 rounded-2xl text-left transition active:scale-[0.99] ${
         isDragging
-          ? "cursor-grabbing bg-white/[0.08] text-zinc-200"
-          : "cursor-grab hover:bg-white/[0.05] hover:text-zinc-300"
+          ? "cursor-grabbing bg-white/[0.08]"
+          : "cursor-grab hover:bg-white/[0.04]"
       }`}
       {...attributes}
       {...listeners}
       aria-label="Reorder exercise"
     >
-      <GripIcon className="h-5 w-5" />
+      <ExerciseThumb name={exerciseName} size="sm" />
+      <h2 className="min-w-0 flex-1 break-words text-lg font-semibold leading-snug text-white">
+        {exerciseName}
+      </h2>
     </button>
   );
 }
@@ -736,12 +743,10 @@ function EditableExerciseCard({
   return (
     <section className="-mx-1 rounded-[24px] border border-white/[0.08] bg-[#141414] py-4">
       <div className="flex items-start gap-2 px-4">
-        <ExerciseDragHandle {...dragHandleProps} />
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-lg font-semibold text-white">
-            {exercise.exerciseNameSnapshot}
-          </h2>
-        </div>
+        <ExerciseDragHandle
+          {...dragHandleProps}
+          exerciseName={exercise.exerciseNameSnapshot}
+        />
         <button
           type="button"
           onClick={onRemoveExercise}
@@ -897,11 +902,14 @@ function EditableSetRow({
           {showWeightInput ? (
             <>
               <input
+                name="edit-set-weight-value"
                 inputMode="decimal"
                 pattern="[0-9]*[.]?[0-9]*"
                 autoComplete="off"
                 autoCorrect="off"
                 autoCapitalize="off"
+                data-lpignore="true"
+                data-form-type="other"
                 value={set.weightValue}
                 onChange={(event) => onUpdate({ weightValue: event.target.value })}
                 placeholder="0"
@@ -929,11 +937,14 @@ function EditableSetRow({
         </div>
 
         <input
+          name="edit-set-reps-value"
           inputMode="numeric"
           pattern="[0-9]*"
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
+          data-lpignore="true"
+          data-form-type="other"
           value={set.repsValue}
           onChange={(event) => onUpdate({ repsValue: event.target.value })}
           placeholder="0"
@@ -943,7 +954,10 @@ function EditableSetRow({
 
         <button
           type="button"
+          name="edit-set-rpe-picker"
           onClick={() => setIsRpeSheetOpen(true)}
+          data-lpignore="true"
+          data-form-type="other"
           className={
             normalizeNullableText(set.rpeValue)
               ? "mx-auto flex h-10 min-w-[52px] items-center justify-center rounded-xl bg-emerald-400/15 px-2 text-sm font-bold text-emerald-200 transition active:scale-95"
@@ -2056,19 +2070,6 @@ function TrashIcon({ className }: IconProps) {
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeWidth="2"
-      />
-    </svg>
-  );
-}
-
-function GripIcon({ className }: IconProps) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" aria-hidden>
-      <path
-        d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="3"
       />
     </svg>
   );

@@ -125,7 +125,7 @@ export function ProfileMenuApp() {
 
   return (
     <AppShell
-      title={currentProfile.username}
+      title="Profile"
       action={
         <div className="flex items-center gap-2">
           <button

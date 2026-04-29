@@ -44,6 +44,14 @@ select {
   scroll-margin-block: 7rem;
 }
 
+* {
+  scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+}
+
 .safe-header {
   padding-top: calc(1.5rem + var(--safe-area-top));
   padding-left: calc(1.25rem + var(--safe-area-left));

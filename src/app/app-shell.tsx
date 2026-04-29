@@ -45,6 +45,7 @@ export function AppShell({
     !hideFloatingCard &&
     session !== null &&
     (pathname === "/" || pathname === "/profile");
+  const showBottomNav = pathname === "/" || pathname === "/profile";
 
   return (
     <div className="h-svh overflow-hidden bg-[#050505] text-zinc-50">
@@ -120,7 +121,7 @@ export function AppShell({
 
         {showFloatingCard ? <ActiveWorkoutCard session={session} /> : null}
 
-        <BottomNav />
+        {showBottomNav ? <BottomNav /> : null}
         <ToastProvider />
       </div>
     </div>
