@@ -256,6 +256,7 @@ export function WorkoutApp() {
 
   return (
     <AppShell
+      hideBottomNav={isActiveWorkoutScreen}
       hideFloatingCard={isActiveWorkoutScreen}
       hideHeader={isActiveWorkoutScreen}
       mainClassName={isActiveWorkoutScreen ? "safe-main-x pb-6 pt-0" : undefined}

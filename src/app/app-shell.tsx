@@ -16,6 +16,7 @@ type AppShellProps = {
   children: ReactNode;
   hideFloatingCard?: boolean;
   hideHeader?: boolean;
+  hideBottomNav?: boolean;
   mainClassName?: string;
   subpage?: boolean;
   title: string;
@@ -35,6 +36,7 @@ export function AppShell({
   children,
   hideFloatingCard = false,
   hideHeader = false,
+  hideBottomNav = false,
   mainClassName = "safe-main-x pb-6 pt-4",
   subpage = false,
   title,
@@ -45,7 +47,8 @@ export function AppShell({
     !hideFloatingCard &&
     session !== null &&
     (pathname === "/" || pathname === "/profile");
-  const showBottomNav = pathname === "/" || pathname === "/profile";
+  const showBottomNav =
+    !hideBottomNav && (pathname === "/" || pathname === "/profile");
 
   return (
     <div className="h-svh overflow-hidden bg-[#050505] text-zinc-50">
