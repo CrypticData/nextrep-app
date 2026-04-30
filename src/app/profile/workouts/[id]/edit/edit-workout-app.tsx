@@ -116,6 +116,13 @@ type PreviousValue = {
   reps: number | null;
 };
 
+type PreviousPreviewResponse = {
+  sets: Array<{
+    client_id: string;
+    previous: PreviousValue | null;
+  }>;
+};
+
 type DraftWorkout = {
   id: string;
   defaultWeightUnit: WeightUnit;
@@ -197,6 +204,8 @@ export function EditWorkoutApp({ workoutId }: { workoutId: string }) {
   const [removeExerciseId, setRemoveExerciseId] = useState<string | null>(null);
   const [deleteSetTarget, setDeleteSetTarget] =
     useState<DeleteSetTarget | null>(null);
+  const draftRef = useRef<DraftWorkout | null>(null);
+  const previousPreviewRequestRef = useRef(0);
 
   const detailHref = `/profile/workouts/${workoutId}`;
 
@@ -225,6 +234,10 @@ export function EditWorkoutApp({ workoutId }: { workoutId: string }) {
 
     return () => window.clearTimeout(timeout);
   }, [loadWorkout, reloadRequest]);
+
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
 
   const loadExerciseLibrary = useCallback(async () => {
     setIsLoadingLibrary(true);
@@ -262,6 +275,9 @@ export function EditWorkoutApp({ workoutId }: { workoutId: string }) {
   const summary = useMemo(() => {
     return draft ? getDraftSummary(draft) : null;
   }, [draft]);
+  const previousPreviewSignature = useMemo(() => {
+    return draft ? getPreviousPreviewSignature(draft) : "";
+  }, [draft]);
   const draftExerciseIds = useMemo(
     () => draft?.exercises.map((exercise) => exercise.clientId) ?? [],
     [draft],
@@ -274,6 +290,50 @@ export function EditWorkoutApp({ workoutId }: { workoutId: string }) {
       coordinateGetter: sortableKeyboardCoordinates,
     }),
   );
+
+  useEffect(() => {
+    const previewDraft = draftRef.current;
+
+    if (!previewDraft || !hasMissingPreviousValue(previewDraft)) {
+      return;
+    }
+
+    const requestId = previousPreviewRequestRef.current + 1;
+    previousPreviewRequestRef.current = requestId;
+    const timeout = window.setTimeout(() => {
+      void fetchJson<PreviousPreviewResponse>(
+        `/api/workout-sessions/${workoutId}/edit/previous-preview`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(toPreviousPreviewPayload(previewDraft)),
+        },
+      )
+        .then((response) => {
+          if (previousPreviewRequestRef.current !== requestId) {
+            return;
+          }
+
+          setDraft((currentDraft) => {
+            if (
+              !currentDraft ||
+              getPreviousPreviewSignature(currentDraft) !== previousPreviewSignature
+            ) {
+              return currentDraft;
+            }
+
+            return mergePreviousPreview(currentDraft, response);
+          });
+        })
+        .catch(() => {
+          // Previous values are hints only; save validation remains server-side.
+        });
+    }, 250);
+
+    return () => window.clearTimeout(timeout);
+  }, [previousPreviewSignature, workoutId]);
 
   function openExercisePicker() {
     setIsPickerOpen(true);
@@ -845,14 +905,17 @@ function EditableExerciseCard({
               onDelete={() => onDeleteSet(set)}
               onUpdate={(patch) =>
                 onUpdate((currentExercise) =>
-                  renumberExerciseSets({
-                    ...currentExercise,
-                    sets: currentExercise.sets.map((currentSet) =>
-                      currentSet.clientId === set.clientId
-                        ? { ...currentSet, ...patch }
-                        : currentSet,
-                    ),
-                  }),
+                  renumberExerciseSets(
+                    {
+                      ...currentExercise,
+                      sets: currentExercise.sets.map((currentSet) =>
+                        currentSet.clientId === set.clientId
+                          ? { ...currentSet, ...patch }
+                          : currentSet,
+                      ),
+                    },
+                    { preserveUnmatchedPrevious: !("setType" in patch) },
+                  ),
                 )
               }
               set={set}
@@ -1741,6 +1804,7 @@ function renumberExercises(exercises: DraftWorkoutExercise[]) {
 
 function renumberExerciseSets(
   exercise: DraftWorkoutExercise,
+  options: { preserveUnmatchedPrevious?: boolean } = {},
 ): DraftWorkoutExercise {
   let nextSetNumber = 1;
   let hasNumberedSet = false;
@@ -1764,6 +1828,7 @@ function renumberExerciseSets(
             setNumber: null,
           },
           currentIdentity,
+          options,
         );
       }
 
@@ -1782,6 +1847,7 @@ function renumberExerciseSets(
               setType: "normal",
             },
             activeParentIdentity,
+            options,
           );
         }
 
@@ -1801,6 +1867,7 @@ function renumberExerciseSets(
             setNumber: null,
           },
           currentIdentity,
+          options,
         );
       }
 
@@ -1812,6 +1879,7 @@ function renumberExerciseSets(
       return withDraftPrevious(
         { ...set, rowIndex: index + 1, setNumber },
         activeParentIdentity,
+        options,
       );
     }),
   };
@@ -1820,6 +1888,7 @@ function renumberExerciseSets(
 function withDraftPrevious(
   set: DraftWorkoutSet,
   currentIdentity: string | null,
+  options: { preserveUnmatchedPrevious?: boolean } = {},
 ) {
   if (
     currentIdentity &&
@@ -1834,7 +1903,7 @@ function withDraftPrevious(
 
   return {
     ...set,
-    previous: null,
+    previous: options.preserveUnmatchedPrevious ? set.previous : null,
   };
 }
 
@@ -1925,6 +1994,58 @@ function toSavePayload(
           reps: parseNullableInteger(set.repsValue),
           rpe: normalizeNullableText(set.rpeValue),
           checked: set.checked,
+        };
+      }),
+    })),
+  };
+}
+
+function toPreviousPreviewPayload(draft: DraftWorkout) {
+  return {
+    exercises: draft.exercises.map((exercise) => ({
+      client_id: exercise.clientId,
+      id: exercise.id,
+      exercise_id: exercise.exerciseId,
+      input_weight_unit: exercise.inputWeightUnit,
+      sets: exercise.sets.map((set) => ({
+        client_id: set.clientId,
+        id: set.id,
+        set_type: set.setType,
+      })),
+    })),
+  };
+}
+
+function getPreviousPreviewSignature(draft: DraftWorkout) {
+  return JSON.stringify(toPreviousPreviewPayload(draft));
+}
+
+function hasMissingPreviousValue(draft: DraftWorkout) {
+  return draft.exercises.some((exercise) =>
+    exercise.sets.some((set) => set.previous === null),
+  );
+}
+
+function mergePreviousPreview(
+  draft: DraftWorkout,
+  response: PreviousPreviewResponse,
+): DraftWorkout {
+  const previousByClientId = new Map(
+    response.sets.map((set) => [set.client_id, set.previous]),
+  );
+
+  return {
+    ...draft,
+    exercises: draft.exercises.map((exercise) => ({
+      ...exercise,
+      sets: exercise.sets.map((set) => {
+        if (set.previous !== null || !previousByClientId.has(set.clientId)) {
+          return set;
+        }
+
+        return {
+          ...set,
+          previous: previousByClientId.get(set.clientId) ?? null,
         };
       }),
     })),

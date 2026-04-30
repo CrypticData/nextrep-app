@@ -13,6 +13,11 @@ import {
   usesBodyweight,
 } from "@/lib/exercise-type";
 import { prisma } from "@/lib/prisma";
+import {
+  computePreviousForSession,
+  type PreviousValue,
+  type PreviousWorkoutExercise,
+} from "@/lib/previous-quick-fill";
 import { convertWeight } from "@/lib/weight-units";
 import { MAX_WORKOUT_DURATION_SECONDS } from "@/lib/workout-duration";
 import { isUuid } from "@/lib/workout-session-api";
@@ -41,6 +46,24 @@ type EditWorkoutSetInput = {
   reps: number | null;
   rpe: string | null;
   checked: boolean;
+};
+
+type PreviewCompletedWorkoutPreviousPayload = {
+  exercises: PreviewWorkoutExerciseInput[];
+};
+
+type PreviewWorkoutExerciseInput = {
+  clientId: string;
+  id: string | null;
+  exerciseId: string | null;
+  inputWeightUnit: WeightUnit | null;
+  sets: PreviewWorkoutSetInput[];
+};
+
+type PreviewWorkoutSetInput = {
+  clientId: string;
+  id: string | null;
+  setType: WorkoutSetType;
 };
 
 type ExistingWorkoutExercise = {
@@ -395,6 +418,189 @@ export async function editCompletedWorkout(
   }
 
   return { kind: "ok", workout: detail.workout };
+}
+
+export function parsePreviewCompletedWorkoutPreviousBody(value: unknown):
+  | { ok: true; data: PreviewCompletedWorkoutPreviousPayload }
+  | { ok: false; message: string } {
+  if (!isRecord(value)) {
+    return { ok: false, message: "Request body must be a JSON object." };
+  }
+
+  if (!Array.isArray(value.exercises)) {
+    return { ok: false, message: "exercises must be an array." };
+  }
+
+  const seenExerciseClientIds = new Set<string>();
+  const seenWorkoutExerciseIds = new Set<string>();
+  const seenSetClientIds = new Set<string>();
+  const seenWorkoutSetIds = new Set<string>();
+  const exercises: PreviewWorkoutExerciseInput[] = [];
+
+  for (const [index, rawExercise] of value.exercises.entries()) {
+    const parsedExercise = readPreviewWorkoutExercise(
+      rawExercise,
+      index,
+      seenExerciseClientIds,
+      seenWorkoutExerciseIds,
+      seenSetClientIds,
+      seenWorkoutSetIds,
+    );
+
+    if (!parsedExercise.ok) {
+      return parsedExercise;
+    }
+
+    exercises.push(parsedExercise.data);
+  }
+
+  return { ok: true, data: { exercises } };
+}
+
+export async function previewCompletedWorkoutPrevious(
+  id: string,
+  payload: PreviewCompletedWorkoutPreviousPayload,
+): Promise<
+  | { kind: "invalid_id" }
+  | { kind: "not_found" }
+  | { kind: "invalid_body"; message: string }
+  | {
+      kind: "ok";
+      sets: Array<{ client_id: string; previous: PreviousValue | null }>;
+    }
+> {
+  if (!isUuid(id)) {
+    return { kind: "invalid_id" };
+  }
+
+  const session = await prisma.workoutSession.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      status: true,
+      startedAt: true,
+      exercises: {
+        select: {
+          id: true,
+          exerciseId: true,
+          inputWeightUnit: true,
+          exercise: {
+            select: {
+              exerciseType: true,
+            },
+          },
+          sets: {
+            select: {
+              id: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!session || session.status !== "completed") {
+    return { kind: "not_found" };
+  }
+
+  const existingExercisesById = new Map(
+    session.exercises.map((exercise) => [exercise.id, exercise]),
+  );
+  const newExerciseIds = payload.exercises
+    .filter((exercise) => !exercise.id && exercise.exerciseId)
+    .map((exercise) => exercise.exerciseId as string);
+  const sourceExercises = await prisma.exercise.findMany({
+    where: {
+      id: {
+        in: Array.from(new Set(newExerciseIds)),
+      },
+    },
+    select: {
+      id: true,
+      exerciseType: true,
+    },
+  });
+  const sourceExerciseById = new Map(
+    sourceExercises.map((exercise) => [exercise.id, exercise]),
+  );
+  const draftExercises: PreviousWorkoutExercise[] = [];
+
+  for (const [index, exerciseInput] of payload.exercises.entries()) {
+    const existingExercise = exerciseInput.id
+      ? existingExercisesById.get(exerciseInput.id)
+      : null;
+
+    if (exerciseInput.id && !existingExercise) {
+      return {
+        kind: "invalid_body",
+        message: "exercises contains an unknown workout exercise id.",
+      };
+    }
+
+    if (!exerciseInput.id && !exerciseInput.exerciseId) {
+      return {
+        kind: "invalid_body",
+        message: "New exercises must include exercise_id.",
+      };
+    }
+
+    const sourceExercise = exerciseInput.exerciseId
+      ? sourceExerciseById.get(exerciseInput.exerciseId) ?? null
+      : null;
+
+    if (!exerciseInput.id && exerciseInput.exerciseId && !sourceExercise) {
+      return {
+        kind: "invalid_body",
+        message: "exercises contains an unknown exercise_id.",
+      };
+    }
+
+    const existingSetIds = new Set(
+      existingExercise?.sets.map((set) => set.id) ?? [],
+    );
+
+    for (const setInput of exerciseInput.sets) {
+      if (setInput.id && !existingSetIds.has(setInput.id)) {
+        return {
+          kind: "invalid_body",
+          message: "sets contains an unknown workout set id.",
+        };
+      }
+    }
+
+    const exerciseType =
+      existingExercise?.exercise?.exerciseType ??
+      sourceExercise?.exerciseType ??
+      null;
+    const exerciseId =
+      existingExercise?.exerciseId ?? exerciseInput.exerciseId ?? null;
+
+    draftExercises.push({
+      id: exerciseInput.clientId,
+      exerciseId,
+      orderIndex: index,
+      inputWeightUnit:
+        exerciseInput.inputWeightUnit ?? existingExercise?.inputWeightUnit ?? null,
+      exercise: exerciseType ? { exerciseType } : null,
+      sets: buildPreviewWorkoutSets(exerciseInput.sets),
+    });
+  }
+
+  const previousBySetId = await computePreviousForSession({
+    cutoffStartedAt: session.startedAt,
+    excludeSessionId: id,
+    exercises: draftExercises,
+  });
+
+  return {
+    kind: "ok",
+    sets: payload.exercises.flatMap((exercise) =>
+      exercise.sets.map((set) => ({
+        client_id: set.clientId,
+        previous: previousBySetId.get(set.clientId) ?? null,
+      })),
+    ),
+  };
 }
 
 async function persistWorkoutExercise(
@@ -794,6 +1000,65 @@ function recalculateSetNumbering(
   });
 }
 
+function buildPreviewWorkoutSets(sets: PreviewWorkoutSetInput[]) {
+  let nextSetNumber = 1;
+  let lastNumberedClientId: string | null = null;
+
+  return sets.map((set, index) => {
+    const baseSet = {
+      id: set.clientId,
+      rowIndex: index + 1,
+      reps: null,
+      weightInputValue: null,
+      weightInputUnit: null,
+      weightNormalizedValue: null,
+      weightNormalizedUnit: null,
+    };
+
+    if (set.setType === "warmup") {
+      return {
+        ...baseSet,
+        setNumber: null,
+        setType: "warmup" as const,
+        parentSetId: null,
+      };
+    }
+
+    if (set.setType === "drop") {
+      if (!lastNumberedClientId) {
+        const setNumber = nextSetNumber;
+        nextSetNumber += 1;
+        lastNumberedClientId = set.clientId;
+
+        return {
+          ...baseSet,
+          setNumber,
+          setType: "normal" as const,
+          parentSetId: null,
+        };
+      }
+
+      return {
+        ...baseSet,
+        setNumber: null,
+        setType: "drop" as const,
+        parentSetId: lastNumberedClientId,
+      };
+    }
+
+    const setNumber = nextSetNumber;
+    nextSetNumber += 1;
+    lastNumberedClientId = set.clientId;
+
+    return {
+      ...baseSet,
+      setNumber,
+      setType: set.setType,
+      parentSetId: null,
+    };
+  });
+}
+
 function isEmptySet(set: EditWorkoutSetInput) {
   const hasWeight =
     set.weightInputValue !== null &&
@@ -918,6 +1183,100 @@ function readWorkoutExercise(
   };
 }
 
+function readPreviewWorkoutExercise(
+  value: unknown,
+  index: number,
+  seenExerciseClientIds: Set<string>,
+  seenWorkoutExerciseIds: Set<string>,
+  seenSetClientIds: Set<string>,
+  seenWorkoutSetIds: Set<string>,
+):
+  | { ok: true; data: PreviewWorkoutExerciseInput }
+  | { ok: false; message: string } {
+  if (!isRecord(value)) {
+    return { ok: false, message: `exercises[${index}] must be an object.` };
+  }
+
+  const clientId = readClientId(value.client_id, `exercises[${index}].client_id`);
+
+  if (!clientId.ok) {
+    return clientId;
+  }
+
+  if (seenExerciseClientIds.has(clientId.data)) {
+    return { ok: false, message: "exercises contains duplicate client_id values." };
+  }
+
+  seenExerciseClientIds.add(clientId.data);
+
+  const id = readOptionalUuid(value.id, `exercises[${index}].id`);
+
+  if (!id.ok) {
+    return id;
+  }
+
+  if (id.data && seenWorkoutExerciseIds.has(id.data)) {
+    return {
+      ok: false,
+      message: "exercises contains duplicate workout exercise ids.",
+    };
+  }
+
+  if (id.data) {
+    seenWorkoutExerciseIds.add(id.data);
+  }
+
+  const exerciseId = readOptionalUuid(
+    value.exercise_id,
+    `exercises[${index}].exercise_id`,
+  );
+
+  if (!exerciseId.ok) {
+    return exerciseId;
+  }
+
+  const inputWeightUnit = readNullableWeightUnit(
+    value.input_weight_unit,
+    `exercises[${index}].input_weight_unit`,
+  );
+
+  if (!inputWeightUnit.ok) {
+    return inputWeightUnit;
+  }
+
+  if (!Array.isArray(value.sets)) {
+    return { ok: false, message: `exercises[${index}].sets must be an array.` };
+  }
+
+  const sets: PreviewWorkoutSetInput[] = [];
+
+  for (const [setIndex, rawSet] of value.sets.entries()) {
+    const set = readPreviewWorkoutSet(
+      rawSet,
+      `exercises[${index}].sets[${setIndex}]`,
+      seenSetClientIds,
+      seenWorkoutSetIds,
+    );
+
+    if (!set.ok) {
+      return set;
+    }
+
+    sets.push(set.data);
+  }
+
+  return {
+    ok: true,
+    data: {
+      clientId: clientId.data,
+      id: id.data,
+      exerciseId: exerciseId.data,
+      inputWeightUnit: inputWeightUnit.data,
+      sets,
+    },
+  };
+}
+
 function readWorkoutSet(
   value: unknown,
   path: string,
@@ -997,6 +1356,60 @@ function readWorkoutSet(
   };
 }
 
+function readPreviewWorkoutSet(
+  value: unknown,
+  path: string,
+  seenSetClientIds: Set<string>,
+  seenWorkoutSetIds: Set<string>,
+):
+  | { ok: true; data: PreviewWorkoutSetInput }
+  | { ok: false; message: string } {
+  if (!isRecord(value)) {
+    return { ok: false, message: `${path} must be an object.` };
+  }
+
+  const clientId = readClientId(value.client_id, `${path}.client_id`);
+
+  if (!clientId.ok) {
+    return clientId;
+  }
+
+  if (seenSetClientIds.has(clientId.data)) {
+    return { ok: false, message: "sets contains duplicate client_id values." };
+  }
+
+  seenSetClientIds.add(clientId.data);
+
+  const id = readOptionalUuid(value.id, `${path}.id`);
+
+  if (!id.ok) {
+    return id;
+  }
+
+  if (id.data && seenWorkoutSetIds.has(id.data)) {
+    return { ok: false, message: "sets contains duplicate ids." };
+  }
+
+  if (id.data) {
+    seenWorkoutSetIds.add(id.data);
+  }
+
+  const setType = readSetType(value.set_type, `${path}.set_type`);
+
+  if (!setType.ok) {
+    return setType;
+  }
+
+  return {
+    ok: true,
+    data: {
+      clientId: clientId.data,
+      id: id.data,
+      setType: setType.data,
+    },
+  };
+}
+
 function readRequiredName(
   value: unknown,
 ): { ok: true; data: string } | { ok: false; message: string } {
@@ -1036,6 +1449,23 @@ function readNullableString(
   }
 
   return { ok: true, data: trimmed || null };
+}
+
+function readClientId(
+  value: unknown,
+  field: string,
+): { ok: true; data: string } | { ok: false; message: string } {
+  if (typeof value !== "string") {
+    return { ok: false, message: `${field} must be a string.` };
+  }
+
+  const trimmed = value.trim();
+
+  if (trimmed.length < 1 || trimmed.length > 120) {
+    return { ok: false, message: `${field} must be 1-120 characters.` };
+  }
+
+  return { ok: true, data: trimmed };
 }
 
 function readStartedAt(
