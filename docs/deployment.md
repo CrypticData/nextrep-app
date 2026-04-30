@@ -75,10 +75,21 @@ The old container stops, the new one starts and applies any new migrations durin
 
 ## Cutting a new release (from the dev machine)
 
+Releasing is two explicit steps: tag, then publish. Tagging by itself does not build or publish anything.
+
+**1. Tag and push (local).**
+
 ```sh
 # After merging your work to main and bumping package.json version:
 git tag v1.0.1
 git push origin v1.0.1
 ```
 
-The `Release` workflow at `.github/workflows/release.yml` builds `Dockerfile.prod` and pushes `ghcr.io/crypticdata/nextrep-app:1.0.1` plus `:latest`. Then upgrade the host as described above.
+**2. Publish the image (manual workflow run).**
+
+Either:
+
+- **GitHub UI**: Actions → Release → "Run workflow" → pick `v1.0.1` from the ref dropdown → Run workflow.
+- **Or CLI**: `gh workflow run release.yml --ref v1.0.1`.
+
+The workflow at `.github/workflows/release.yml` builds `Dockerfile.prod` and pushes `ghcr.io/crypticdata/nextrep-app:1.0.1` plus `:latest`. Then upgrade the host as described above.

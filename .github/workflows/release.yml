@@ -1,9 +1,10 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  # Manual trigger only. Tagging a commit no longer publishes an image —
+  # run this workflow from the Actions UI (or `gh workflow run release.yml
+  # --ref vX.Y.Z`) when you want to publish.
+  workflow_dispatch:
 
 jobs:
   build-and-push:
