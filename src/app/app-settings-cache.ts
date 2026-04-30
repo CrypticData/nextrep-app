@@ -2,6 +2,7 @@
 
 export type AppSettingsCache = {
   silenceSuccessToasts: boolean;
+  soundEnabled: boolean;
 };
 
 const APP_SETTINGS_CACHE_KEY = "nextrep:app-settings";
@@ -29,6 +30,11 @@ export function readAppSettingsCache() {
     ) {
       return {
         silenceSuccessToasts: parsedValue.silenceSuccessToasts,
+        soundEnabled:
+          "soundEnabled" in parsedValue &&
+          typeof parsedValue.soundEnabled === "boolean"
+            ? parsedValue.soundEnabled
+            : true,
       };
     }
   } catch {
@@ -48,6 +54,7 @@ export function writeAppSettingsCache(settings: AppSettingsCache) {
       APP_SETTINGS_CACHE_KEY,
       JSON.stringify({
         silenceSuccessToasts: settings.silenceSuccessToasts,
+        soundEnabled: settings.soundEnabled,
       }),
     );
   } catch {

@@ -7,11 +7,13 @@ import { useToast } from "../../../toast";
 
 type Settings = {
   silence_success_toasts: boolean;
+  sound_enabled: boolean;
 };
 
 export function NotificationsSettingsApp() {
   const toast = useToast();
   const [showSuccessMessages, setShowSuccessMessages] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,8 +25,10 @@ export function NotificationsSettingsApp() {
     try {
       const settings = await fetchJson<Settings>("/api/settings");
       setShowSuccessMessages(!settings.silence_success_toasts);
+      setSoundEnabled(settings.sound_enabled);
       writeAppSettingsCache({
         silenceSuccessToasts: settings.silence_success_toasts,
+        soundEnabled: settings.sound_enabled,
       });
     } catch (loadError) {
       setError(getErrorMessage(loadError));
@@ -64,11 +68,47 @@ export function NotificationsSettingsApp() {
       setShowSuccessMessages(!settings.silence_success_toasts);
       writeAppSettingsCache({
         silenceSuccessToasts: settings.silence_success_toasts,
+        soundEnabled: settings.sound_enabled,
       });
       toast.success("Notifications updated");
     } catch (saveError) {
       const message = getErrorMessage(saveError);
       setShowSuccessMessages(previousValue);
+      setError(message);
+      toast.error(message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleSelectSoundEnabled(nextValue: boolean) {
+    if (nextValue === soundEnabled || isSaving) {
+      return;
+    }
+
+    const previousValue = soundEnabled;
+
+    setSoundEnabled(nextValue);
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const settings = await fetchJson<Settings>("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sound_enabled: nextValue,
+        }),
+      });
+      setSoundEnabled(settings.sound_enabled);
+      writeAppSettingsCache({
+        silenceSuccessToasts: settings.silence_success_toasts,
+        soundEnabled: settings.sound_enabled,
+      });
+      toast.success("Notifications updated");
+    } catch (saveError) {
+      const message = getErrorMessage(saveError);
+      setSoundEnabled(previousValue);
       setError(message);
       toast.error(message);
     } finally {
@@ -93,28 +133,50 @@ export function NotificationsSettingsApp() {
         {isLoading ? <NotificationsSkeleton /> : null}
 
         {!isLoading ? (
-          <section>
-            <h2 className="mb-3 text-sm font-semibold text-zinc-500">
-              Success messages
-            </h2>
-            <div className="grid gap-3">
-              <NotificationOption
-                disabled={isLoading || isSaving}
-                label="Show success messages"
-                onSelect={() => void handleSelectShowSuccessMessages(true)}
-                selected={showSuccessMessages}
-              />
-              <NotificationOption
-                disabled={isLoading || isSaving}
-                label="Silence success messages"
-                onSelect={() => void handleSelectShowSuccessMessages(false)}
-                selected={!showSuccessMessages}
-              />
-            </div>
-            <p className="mt-4 text-sm leading-6 text-zinc-500">
-              Error messages always show, so you&apos;ll still know if something fails.
-            </p>
-          </section>
+          <>
+            <section>
+              <h2 className="mb-3 text-sm font-semibold text-zinc-500">
+                Timer sound
+              </h2>
+              <div className="grid gap-3">
+                <NotificationOption
+                  disabled={isLoading || isSaving}
+                  label="Sound on"
+                  onSelect={() => void handleSelectSoundEnabled(true)}
+                  selected={soundEnabled}
+                />
+                <NotificationOption
+                  disabled={isLoading || isSaving}
+                  label="Sound off"
+                  onSelect={() => void handleSelectSoundEnabled(false)}
+                  selected={!soundEnabled}
+                />
+              </div>
+            </section>
+
+            <section>
+              <h2 className="mb-3 text-sm font-semibold text-zinc-500">
+                Success messages
+              </h2>
+              <div className="grid gap-3">
+                <NotificationOption
+                  disabled={isLoading || isSaving}
+                  label="Show success messages"
+                  onSelect={() => void handleSelectShowSuccessMessages(true)}
+                  selected={showSuccessMessages}
+                />
+                <NotificationOption
+                  disabled={isLoading || isSaving}
+                  label="Silence success messages"
+                  onSelect={() => void handleSelectShowSuccessMessages(false)}
+                  selected={!showSuccessMessages}
+                />
+              </div>
+              <p className="mt-4 text-sm leading-6 text-zinc-500">
+                Error messages always show, so you&apos;ll still know if something fails.
+              </p>
+            </section>
+          </>
         ) : null}
       </div>
     </AppShell>

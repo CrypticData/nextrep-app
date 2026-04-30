@@ -20,12 +20,16 @@ export type ActiveWorkoutSession = {
   current_exercise_name: string | null;
   started_at: string;
   ended_at: string | null;
+  active_rest_started_at: string | null;
+  active_rest_duration_seconds: number | null;
+  active_rest_workout_session_exercise_id: string | null;
   server_now: string;
   created_at: string;
   updated_at: string;
 };
 
 type ActiveWorkoutContextValue = {
+  adjustRest: (deltaSeconds: number) => Promise<void>;
   clear: () => void;
   consumeOpenLiveRequest: () => void;
   error: string | null;
@@ -40,6 +44,11 @@ type ActiveWorkoutContextValue = {
   session: ActiveWorkoutSession | null;
   setLastScrollTop: (scrollTop: number | null) => void;
   setSession: (session: ActiveWorkoutSession | null) => void;
+  skipRest: () => Promise<void>;
+  startRest: (
+    workoutSessionExerciseId: string,
+    durationSeconds: number,
+  ) => Promise<void>;
 };
 
 type OpenLiveRequest = {
@@ -68,13 +77,96 @@ export function ActiveWorkoutProvider({ children }: { children: ReactNode }) {
 
   const replaceSession = useCallback(
     (nextSession: ActiveWorkoutSession | null) => {
-      setSession(nextSession);
-      setOffsetMs(getServerClockOffsetMs(nextSession));
+      const normalizedSession = normalizeExpiredRest(nextSession);
+
+      setSession(normalizedSession);
+      setOffsetMs(getServerClockOffsetMs(normalizedSession));
       setError(null);
       setHasLoaded(true);
+
+      if (nextSession && normalizedSession !== nextSession) {
+        void fetch(`/api/workout-sessions/${nextSession.id}/rest`, {
+          method: "DELETE",
+        }).catch(() => undefined);
+      }
     },
     [],
   );
+
+  const updateRest = useCallback((rest: ActiveRestResponse) => {
+    setSession((currentSession) => {
+      if (!currentSession) {
+        return currentSession;
+      }
+
+      setOffsetMs(getServerClockOffsetMsFromValue(rest.server_now));
+
+      return {
+        ...currentSession,
+        active_rest_started_at: rest.active_rest_started_at,
+        active_rest_duration_seconds: rest.active_rest_duration_seconds,
+        active_rest_workout_session_exercise_id:
+          rest.active_rest_workout_session_exercise_id,
+        server_now: rest.server_now,
+      };
+    });
+  }, []);
+
+  const startRest = useCallback(
+    async (workoutSessionExerciseId: string, durationSeconds: number) => {
+      if (!session) {
+        return;
+      }
+
+      const rest = await fetchJson<ActiveRestResponse>(
+        `/api/workout-sessions/${session.id}/rest`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            workout_session_exercise_id: workoutSessionExerciseId,
+            duration_seconds: durationSeconds,
+          }),
+        },
+      );
+
+      updateRest(rest);
+    },
+    [session, updateRest],
+  );
+
+  const adjustRest = useCallback(
+    async (deltaSeconds: number) => {
+      if (!session) {
+        return;
+      }
+
+      const rest = await fetchJson<ActiveRestResponse>(
+        `/api/workout-sessions/${session.id}/rest`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ delta_seconds: deltaSeconds }),
+        },
+      );
+
+      updateRest(rest);
+    },
+    [session, updateRest],
+  );
+
+  const skipRest = useCallback(async () => {
+    if (!session) {
+      return;
+    }
+
+    const rest = await fetchJson<ActiveRestResponse>(
+      `/api/workout-sessions/${session.id}/rest`,
+      { method: "DELETE" },
+    );
+
+    updateRest(rest);
+  }, [session, updateRest]);
 
   const refresh = useCallback(
     async (options: { suppressError?: boolean } = {}) => {
@@ -112,6 +204,7 @@ export function ActiveWorkoutProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<ActiveWorkoutContextValue>(
     () => ({
+      adjustRest,
       clear: () => {
         replaceSession(null);
         setOpenLiveRequest({
@@ -141,8 +234,11 @@ export function ActiveWorkoutProvider({ children }: { children: ReactNode }) {
       session,
       setLastScrollTop,
       setSession: replaceSession,
+      skipRest,
+      startRest,
     }),
     [
+      adjustRest,
       error,
       hasLoaded,
       lastScrollTop,
@@ -151,6 +247,8 @@ export function ActiveWorkoutProvider({ children }: { children: ReactNode }) {
       refresh,
       replaceSession,
       session,
+      skipRest,
+      startRest,
     ],
   );
 
@@ -207,6 +305,61 @@ export function useElapsedSeconds(startedAt: string) {
   return elapsedSeconds;
 }
 
+export function useRestTimerRemainingSeconds() {
+  const { offsetMs, session } = useActiveWorkout();
+  const [remainingSeconds, setRemainingSeconds] = useState(0);
+
+  useEffect(() => {
+    if (
+      !session?.active_rest_started_at ||
+      !session.active_rest_duration_seconds
+    ) {
+      const timeout = window.setTimeout(() => setRemainingSeconds(0), 0);
+
+      return () => window.clearTimeout(timeout);
+    }
+
+    const startedAtMs = Date.parse(session.active_rest_started_at);
+    const durationSeconds = session.active_rest_duration_seconds;
+
+    if (Number.isNaN(startedAtMs)) {
+      const timeout = window.setTimeout(() => setRemainingSeconds(0), 0);
+
+      return () => window.clearTimeout(timeout);
+    }
+
+    const updateRemainingSeconds = () => {
+      const estimatedServerNowMs = Date.now() + (offsetMs ?? 0);
+      const elapsedSeconds = Math.floor(
+        (estimatedServerNowMs - startedAtMs) / 1000,
+      );
+
+      setRemainingSeconds(
+        Math.max(0, durationSeconds - elapsedSeconds),
+      );
+    };
+
+    updateRemainingSeconds();
+
+    const interval = window.setInterval(updateRemainingSeconds, 250);
+
+    return () => window.clearInterval(interval);
+  }, [
+    offsetMs,
+    session?.active_rest_duration_seconds,
+    session?.active_rest_started_at,
+  ]);
+
+  return remainingSeconds;
+}
+
+type ActiveRestResponse = {
+  server_now: string;
+  active_rest_started_at: string | null;
+  active_rest_duration_seconds: number | null;
+  active_rest_workout_session_exercise_id: string | null;
+};
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
 
@@ -250,7 +403,40 @@ function getServerClockOffsetMs(session: ActiveWorkoutSession | null) {
     return null;
   }
 
-  const serverNowMs = Date.parse(session.server_now);
+  return getServerClockOffsetMsFromValue(session.server_now);
+}
+
+function getServerClockOffsetMsFromValue(serverNow: string) {
+  const serverNowMs = Date.parse(serverNow);
 
   return Number.isNaN(serverNowMs) ? null : serverNowMs - Date.now();
+}
+
+function normalizeExpiredRest(session: ActiveWorkoutSession | null) {
+  if (
+    !session?.active_rest_started_at ||
+    !session.active_rest_duration_seconds
+  ) {
+    return session;
+  }
+
+  const startedAtMs = Date.parse(session.active_rest_started_at);
+  const serverNowMs = Date.parse(session.server_now);
+
+  if (Number.isNaN(startedAtMs) || Number.isNaN(serverNowMs)) {
+    return session;
+  }
+
+  const elapsedSeconds = Math.floor((serverNowMs - startedAtMs) / 1000);
+
+  if (elapsedSeconds < session.active_rest_duration_seconds) {
+    return session;
+  }
+
+  return {
+    ...session,
+    active_rest_started_at: null,
+    active_rest_duration_seconds: null,
+    active_rest_workout_session_exercise_id: null,
+  };
 }

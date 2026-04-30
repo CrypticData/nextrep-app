@@ -90,6 +90,7 @@ type WorkoutSessionExercise = {
   equipment_name_snapshot: string | null;
   primary_muscle_group_name_snapshot: string | null;
   notes: string | null;
+  rest_seconds: number | null;
   sets: WorkoutSet[];
   created_at: string;
   updated_at: string;
@@ -143,6 +144,12 @@ type SortableHandleProps = {
 const SET_SAVE_DEBOUNCE_MS = 350;
 const EXERCISE_NOTES_SAVE_DEBOUNCE_MS = 800;
 const LBS_PER_KG = 2.2046226218;
+const REST_TIMER_ROW_HEIGHT = 40;
+const REST_TIMER_VISIBLE_ROWS = 3;
+const REST_TIMER_PICKER_HEIGHT =
+  REST_TIMER_ROW_HEIGHT * REST_TIMER_VISIBLE_ROWS;
+const REST_TIMER_SELECTED_ROW_OFFSET =
+  (REST_TIMER_PICKER_HEIGHT - REST_TIMER_ROW_HEIGHT) / 2;
 
 export function WorkoutApp() {
   const toast = useToast();
@@ -268,7 +275,9 @@ export function WorkoutApp() {
       hideBottomNav={isActiveWorkoutScreen}
       hideFloatingCard={isActiveWorkoutScreen}
       hideHeader={isActiveWorkoutScreen}
+      hideRestTimer={screen === "save"}
       mainClassName={isActiveWorkoutScreen ? "safe-main-x pb-6 pt-0" : undefined}
+      showRestTimer={screen === "live"}
       title={isActiveWorkoutScreen ? "Log Workout" : "Workout"}
     >
       {isLoading ? <WorkoutLoading /> : null}
@@ -459,6 +468,8 @@ function LiveWorkout({
     offsetMs,
     refresh,
     setLastScrollTop,
+    skipRest,
+    startRest,
   } = useActiveWorkout();
   const elapsedSeconds = useElapsedSeconds(session.started_at);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -824,6 +835,16 @@ function LiveWorkout({
         if (patch.checked !== undefined) {
           void refresh({ suppressError: true });
         }
+
+        if (patch.checked === true) {
+          const workoutExercise = latestWorkoutExercisesRef.current.find(
+            (candidate) => candidate.id === workoutExerciseId,
+          );
+
+          if (workoutExercise?.rest_seconds) {
+            void startRest(workoutExerciseId, workoutExercise.rest_seconds);
+          }
+        }
       },
     });
   }
@@ -1039,6 +1060,55 @@ function LiveWorkout({
 
     return persistWorkoutExerciseNotes(workoutExerciseId, normalizedNotes);
   }, [persistWorkoutExerciseNotes, syncDebouncedNoteTimerCount]);
+
+  async function saveWorkoutExerciseRest(
+    workoutExerciseId: string,
+    restSeconds: number | null,
+  ) {
+    setSetEditError(null);
+    setFinishError(null);
+    setWorkoutExercisesAndRef((currentExercises) =>
+      currentExercises.map((workoutExercise) =>
+        workoutExercise.id === workoutExerciseId
+          ? { ...workoutExercise, rest_seconds: restSeconds }
+          : workoutExercise,
+      ),
+    );
+
+    enqueueSave({
+      key: getWorkoutExerciseFieldKey(workoutExerciseId, "rest_seconds"),
+      describe: "exercise rest timer",
+      run: (signal) =>
+        fetchJson<WorkoutSessionExercise>(
+          `/api/workout-session-exercises/${workoutExerciseId}`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ rest_seconds: restSeconds }),
+            signal,
+          },
+        ),
+      onSuccess: (response) => {
+        const updatedWorkoutExercise = response as WorkoutSessionExercise;
+
+        setWorkoutExercisesAndRef((currentExercises) =>
+          sortWorkoutExercises(
+            currentExercises.map((workoutExercise) =>
+              workoutExercise.id === workoutExerciseId
+                ? updatedWorkoutExercise
+                : workoutExercise,
+            ),
+          ),
+        );
+      },
+    });
+
+    await waitForSaveKeys([
+      getWorkoutExerciseFieldKey(workoutExerciseId, "rest_seconds"),
+    ]);
+  }
 
   const flushPendingExerciseNotes = useCallback(async () => {
     const noteKeys: string[] = [];
@@ -1262,6 +1332,10 @@ function LiveWorkout({
     );
 
     if (validation.can_continue) {
+      if (session.active_rest_started_at) {
+        void skipRest();
+      }
+
       onReadyToSave(
         buildDefaultSaveWorkoutDraft(session, offsetMs, exercisesForSummary),
       );
@@ -1293,6 +1367,7 @@ function LiveWorkout({
     isSaveQueueBusy,
     session,
     showSyncBusyToast,
+    skipRest,
     workoutExercises,
   ]);
 
@@ -1439,6 +1514,12 @@ function LiveWorkout({
                           "weight-unit",
                         ),
                       )}
+                      isRestSaving={isQueueKeyActive(
+                        getWorkoutExerciseFieldKey(
+                          workoutExercise.id,
+                          "rest_seconds",
+                        ),
+                      )}
                       isRemoving={isQueueKeyActive(
                         getWorkoutExerciseRemoveKey(workoutExercise.id),
                       )}
@@ -1458,6 +1539,9 @@ function LiveWorkout({
                       }
                       onUpdateNotes={(notes) =>
                         saveWorkoutExerciseNotes(workoutExercise.id, notes)
+                      }
+                      onUpdateRest={(restSeconds) =>
+                        saveWorkoutExerciseRest(workoutExercise.id, restSeconds)
                       }
                       onNotesChange={(notes) =>
                         handleChangeWorkoutExerciseNotes(
@@ -1916,6 +2000,7 @@ type WorkoutExerciseCardProps = {
   isSetDeleting: (setId: string) => boolean;
   isSetSaving: (setId: string) => boolean;
   isRemoving: boolean;
+  isRestSaving: boolean;
   isUnitSaving: boolean;
   onAddSet: () => void;
   onCardElementChange: (
@@ -1927,6 +2012,7 @@ type WorkoutExerciseCardProps = {
   onNotesChange: (notes: string) => void;
   onUpdateExerciseUnit: (weightUnit: "lbs" | "kg") => Promise<void>;
   onUpdateNotes: (notes: string) => Promise<void>;
+  onUpdateRest: (restSeconds: number | null) => Promise<void>;
   onUpdateSet: (setId: string, patch: WorkoutSetPatch) => Promise<void>;
   sessionDefaultWeightUnit: "lbs" | "kg";
   workoutExercise: WorkoutSessionExercise;
@@ -1995,7 +2081,7 @@ function ExerciseDragHandle({
     <button
       ref={setActivatorNodeRef}
       type="button"
-      className={`flex min-w-0 flex-1 select-none touch-none items-center gap-3 rounded-2xl text-left transition [-webkit-touch-callout:none] active:scale-[0.99] ${
+      className={`flex min-w-0 flex-1 select-none touch-none items-center gap-2 rounded-xl text-left transition [-webkit-touch-callout:none] active:scale-[0.99] ${
         isDragging
           ? "cursor-grabbing bg-white/[0.08]"
           : "cursor-grab hover:bg-white/[0.04]"
@@ -2004,8 +2090,8 @@ function ExerciseDragHandle({
       {...listeners}
       aria-label="Reorder exercise"
     >
-      <ExerciseThumb name={exerciseName} size="sm" />
-      <h2 className="min-w-0 flex-1 select-none break-words text-lg font-semibold leading-snug text-white">
+      <ExerciseThumb name={exerciseName} size="xs" />
+      <h2 className="min-w-0 flex-1 select-none break-words text-base font-semibold leading-snug text-white">
         {exerciseName}
       </h2>
     </button>
@@ -2018,6 +2104,7 @@ function WorkoutExerciseCard({
   isSetDeleting,
   isSetSaving,
   isRemoving,
+  isRestSaving,
   isUnitSaving,
   onAddSet,
   onDeleteSet,
@@ -2025,6 +2112,7 @@ function WorkoutExerciseCard({
   onNotesChange,
   onUpdateExerciseUnit,
   onUpdateNotes,
+  onUpdateRest,
   onUpdateSet,
   sessionDefaultWeightUnit,
   workoutExercise,
@@ -2034,6 +2122,7 @@ function WorkoutExerciseCard({
   const exerciseType = workoutExercise.exercise_type ?? "weight_reps";
   const [isUnitSheetOpen, setIsUnitSheetOpen] = useState(false);
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
+  const [isRestSheetOpen, setIsRestSheetOpen] = useState(false);
   const activeWeightUnit =
     workoutExercise.input_weight_unit ?? sessionDefaultWeightUnit;
   const canChangeExerciseUnit = hasWeightInput(exerciseType);
@@ -2050,40 +2139,65 @@ function WorkoutExerciseCard({
     await onUpdateNotes(workoutExercise.notes ?? "");
   }
 
+  async function handleSelectRest(restSeconds: number | null) {
+    setIsRestSheetOpen(false);
+    await onUpdateRest(restSeconds);
+  }
+
   return (
-    <section className="-mx-5 border-y border-white/[0.07] bg-[#101010] py-4">
+    <section className="-mx-5 border-y border-white/[0.07] bg-[#101010] pb-2 pt-3">
       <div className="flex items-start gap-2 px-5">
         <ExerciseDragHandle
           {...dragHandleProps}
           exerciseName={workoutExercise.exercise_name_snapshot}
         />
-        <div className="flex shrink-0 items-center gap-1.5">
-          <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-xs font-bold text-zinc-300">
+        <div className="flex shrink-0 items-center gap-1">
+          <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] font-bold text-zinc-300">
             #{workoutExercise.order_index + 1}
           </span>
           <button
             type="button"
             onClick={() => setIsActionSheetOpen(true)}
             disabled={isRemoving}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200 active:scale-95 disabled:cursor-wait disabled:opacity-50"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-500 transition hover:bg-white/[0.05] hover:text-zinc-200 active:scale-95 disabled:cursor-wait disabled:opacity-50"
             aria-label="Workout exercise actions"
           >
-            <MoreIcon className="h-5 w-5" />
+            <MoreIcon className="h-4 w-4" />
           </button>
         </div>
       </div>
 
-      <div className="mt-3 px-5">
-        <AutosizeNotesTextarea
-          value={workoutExercise.notes ?? ""}
-          onBlur={() => void commitNotes()}
-          onChange={(event) => onNotesChange(event.target.value)}
-          placeholder="Notes"
-        />
+      <div className="mt-2 px-5">
+        <div className="border-y border-white/[0.06]">
+          <div className="py-0.5">
+            <AutosizeNotesTextarea
+              flush
+              value={workoutExercise.notes ?? ""}
+              onBlur={() => void commitNotes()}
+              onChange={(event) => onNotesChange(event.target.value)}
+              placeholder="Notes"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsRestSheetOpen(true)}
+            aria-busy={isRestSaving}
+            className="flex min-h-9 w-full items-center gap-2 border-t border-white/[0.06] py-2 text-left transition active:scale-[0.99]"
+          >
+            <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-zinc-400">
+              <TimerIcon className="h-4 w-4 shrink-0 text-emerald-300" />
+              <span className="truncate">Rest Timer</span>
+            </span>
+            <span className="font-mono text-sm font-bold text-white">
+              {formatRestDuration(workoutExercise.rest_seconds)}
+            </span>
+          </button>
+        </div>
       </div>
 
-      <div className="mt-5">
-        <div className="grid grid-cols-[42px_minmax(54px,1fr)_68px_46px_56px_38px] items-center border-y border-white/[0.06] bg-[#101010] px-2 py-2.5 text-[10px] font-bold uppercase tracking-[0.09em] text-zinc-500">
+      <div>
+        <div className="grid grid-cols-[38px_minmax(54px,1fr)_62px_42px_50px_34px] items-center border-y border-white/[0.06] bg-[#101010] px-2 py-1.5 text-[10px] font-bold uppercase tracking-[0.09em] text-zinc-500">
           <span>Set</span>
           <span className="truncate">Previous</span>
           <button
@@ -2124,14 +2238,14 @@ function WorkoutExerciseCard({
         )}
       </div>
 
-      <div className="px-5 pt-4">
+      <div className="px-5 pt-2">
         <button
           type="button"
           onClick={onAddSet}
           disabled={isAddingSet || isRemoving}
-          className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white/[0.07] px-4 text-base font-bold text-zinc-300 transition active:scale-[0.99] disabled:cursor-wait disabled:opacity-60"
+          className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-white/[0.07] px-4 text-sm font-bold text-zinc-300 transition active:scale-[0.99] disabled:cursor-wait disabled:opacity-60"
         >
-          <PlusIcon className="h-5 w-5" />
+          <PlusIcon className="h-4 w-4" />
           {isAddingSet ? "Adding Set" : "Add Set"}
         </button>
       </div>
@@ -2159,18 +2273,30 @@ function WorkoutExerciseCard({
           title={workoutExercise.exercise_name_snapshot}
         />
       ) : null}
+
+      {isRestSheetOpen ? (
+        <RestTimerSheet
+          currentRestSeconds={workoutExercise.rest_seconds}
+          isSaving={isRestSaving}
+          onClose={() => setIsRestSheetOpen(false)}
+          onSelect={(restSeconds) => void handleSelectRest(restSeconds)}
+          subtitle={workoutExercise.exercise_name_snapshot}
+        />
+      ) : null}
     </section>
   );
 }
 
 function AutosizeNotesTextarea({
   className = "bg-[#181818]",
+  flush = false,
   onBlur,
   onChange,
   placeholder,
   value,
 }: {
   className?: string;
+  flush?: boolean;
   onBlur?: () => void;
   onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
   placeholder: string;
@@ -2199,7 +2325,11 @@ function AutosizeNotesTextarea({
       maxLength={2000}
       autoCapitalize="sentences"
       autoCorrect="on"
-      className={`max-h-40 min-h-9 w-full resize-none overflow-hidden rounded-xl border border-white/10 px-3 py-2 text-base font-medium leading-6 text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-300/40 ${className}`}
+      className={
+        flush
+          ? "max-h-28 min-h-6 w-full resize-none overflow-hidden border-0 bg-transparent px-0 py-0.5 text-sm font-medium leading-5 text-white outline-none transition placeholder:text-zinc-600"
+          : `max-h-40 min-h-9 w-full resize-none overflow-hidden rounded-xl border border-white/10 px-3 py-2 text-base font-medium leading-6 text-white outline-none transition placeholder:text-zinc-600 focus:border-emerald-300/40 ${className}`
+      }
       placeholder={placeholder}
     />
   );
@@ -2321,11 +2451,11 @@ function WorkoutSetEditorRow({
 
   return (
     <div className={`bg-[#101010] ${savingTone}`}>
-      <div className="grid min-h-[64px] grid-cols-[42px_minmax(54px,1fr)_68px_46px_56px_38px] items-center border-b border-white/[0.05] px-2 py-2.5">
+      <div className="grid min-h-[52px] grid-cols-[38px_minmax(54px,1fr)_62px_42px_50px_34px] items-center border-b border-white/[0.05] px-2 py-1.5">
         <button
           type="button"
           onClick={() => setIsSetTypeSheetOpen(true)}
-          className={`flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.045] text-lg font-bold transition active:scale-95 ${getSetLabelClassName(set.set_type)}`}
+          className={`flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.045] text-base font-bold transition active:scale-95 ${getSetLabelClassName(set.set_type)}`}
           aria-label="Select set type"
         >
           {formatSetLabel(set)}
@@ -2350,11 +2480,11 @@ function WorkoutSetEditorRow({
               onBlur={() => void commitSetValues()}
               onChange={(event) => setWeightValue(event.target.value)}
               placeholder={weightPlaceholder}
-              className="h-11 w-full min-w-0 rounded-xl border border-transparent bg-transparent px-1 text-center text-xl font-semibold text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-white/[0.04]"
+              className="h-9 w-full min-w-0 rounded-lg border border-transparent bg-transparent px-1 text-center text-lg font-semibold text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-white/[0.04]"
               aria-label={getWeightInputLabel(exerciseType)}
             />
           ) : (
-            <span className="text-xl font-semibold text-zinc-700">
+            <span className="text-lg font-semibold text-zinc-700">
               {weightPlaceholder}
             </span>
           )}
@@ -2373,7 +2503,7 @@ function WorkoutSetEditorRow({
           onBlur={() => void commitSetValues()}
           onChange={(event) => setRepsValue(event.target.value)}
           placeholder="0"
-          className="h-11 w-full min-w-0 rounded-xl border border-transparent bg-transparent px-1 text-center text-xl font-semibold text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-white/[0.04]"
+          className="h-9 w-full min-w-0 rounded-lg border border-transparent bg-transparent px-1 text-center text-lg font-semibold text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-white/[0.04]"
           aria-label="Reps"
         />
 
@@ -2385,8 +2515,8 @@ function WorkoutSetEditorRow({
           data-form-type="other"
           className={
             set.rpe
-              ? "mx-auto flex h-10 min-w-[52px] items-center justify-center rounded-xl bg-emerald-400/15 px-2 text-sm font-bold text-emerald-200 transition active:scale-95"
-              : "mx-auto flex h-10 min-w-[52px] items-center justify-center rounded-xl bg-white/[0.09] px-2 text-xs font-bold text-zinc-300 transition active:scale-95"
+              ? "mx-auto flex h-9 min-w-[48px] items-center justify-center rounded-lg bg-emerald-400/15 px-2 text-sm font-bold text-emerald-200 transition active:scale-95"
+              : "mx-auto flex h-9 min-w-[48px] items-center justify-center rounded-lg bg-white/[0.09] px-2 text-xs font-bold text-zinc-300 transition active:scale-95"
           }
           aria-label="Select RPE"
         >
@@ -2402,12 +2532,12 @@ function WorkoutSetEditorRow({
           }
           className={
             set.checked
-              ? "mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-lg shadow-emerald-950/40 transition active:scale-95"
-              : "mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.09] text-zinc-300 transition active:scale-95"
+              ? "mx-auto flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500 text-white shadow-lg shadow-emerald-950/40 transition active:scale-95"
+              : "mx-auto flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.09] text-zinc-300 transition active:scale-95"
           }
           aria-label={set.checked ? "Mark set unchecked" : "Mark set checked"}
         >
-          <CheckIcon className="h-5 w-5" />
+          <CheckIcon className="h-4 w-4" />
         </button>
       </div>
 
@@ -2625,6 +2755,186 @@ function WeightUnitSheet({
         </WorkoutSheetField>
       </div>
     </BottomSheet>
+  );
+}
+
+function RestTimerSheet({
+  currentRestSeconds,
+  isSaving,
+  onClose,
+  onSelect,
+  subtitle,
+}: {
+  currentRestSeconds: number | null;
+  isSaving: boolean;
+  onClose: () => void;
+  onSelect: (restSeconds: number | null) => void;
+  subtitle: string;
+}) {
+  const [selectedRestSeconds, setSelectedRestSeconds] = useState(
+    currentRestSeconds ?? 0,
+  );
+  const options = useMemo(() => buildRestTimerOptions(), []);
+
+  function applyRestTimer() {
+    onSelect(selectedRestSeconds === 0 ? null : selectedRestSeconds);
+  }
+
+  return (
+    <div className="safe-sheet fixed inset-0 z-50 flex items-end justify-center bg-black/70">
+      <button
+        type="button"
+        className="absolute inset-0 cursor-default"
+        onClick={onClose}
+        aria-label="Close sheet"
+      />
+      <section className="safe-sheet-panel relative flex max-h-[90dvh] w-full max-w-md flex-col rounded-t-[28px] border border-white/10 bg-[#141414] shadow-2xl shadow-black">
+        <div className="flex justify-center px-5 py-3">
+          <div className="h-1 w-10 rounded-full bg-white/20" />
+        </div>
+        <div className="relative flex min-h-[48px] items-center justify-between border-b border-white/10 px-5 pb-4">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSaving}
+            className="z-10 min-w-[72px] text-left text-sm font-medium text-zinc-400 disabled:cursor-wait disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <div className="pointer-events-none absolute left-1/2 max-w-[52%] -translate-x-1/2 text-center">
+            <h2 className="truncate text-base font-semibold text-white">
+              Rest Timer
+            </h2>
+            <p className="mt-0.5 truncate text-xs font-medium text-zinc-500">
+              {subtitle}
+            </p>
+          </div>
+          <div className="z-10 flex min-w-[72px] justify-end">
+            <button
+              type="button"
+              onClick={applyRestTimer}
+              disabled={isSaving}
+              className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-bold text-white transition active:scale-95 disabled:cursor-wait disabled:opacity-60"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+        <div className="px-5 py-5">
+          <div className="mx-auto max-w-[220px]">
+            <RestDurationWheelSelector
+              onSelect={setSelectedRestSeconds}
+              options={options}
+              selectedValue={selectedRestSeconds}
+            />
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function RestDurationWheelSelector({
+  onSelect,
+  options,
+  selectedValue,
+}: {
+  onSelect: (value: number) => void;
+  options: Array<{ label: string; value: number }>;
+  selectedValue: number;
+}) {
+  const selectedIndex = Math.max(
+    0,
+    options.findIndex((option) => option.value === selectedValue),
+  );
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const scrollEndTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({
+      top: selectedIndex * REST_TIMER_ROW_HEIGHT,
+      behavior: "auto",
+    });
+  }, [selectedIndex]);
+
+  useEffect(() => {
+    return () => {
+      if (scrollEndTimerRef.current) {
+        window.clearTimeout(scrollEndTimerRef.current);
+      }
+    };
+  }, []);
+
+  function handleScroll() {
+    const container = scrollRef.current;
+
+    if (!container) {
+      return;
+    }
+
+    if (scrollEndTimerRef.current) {
+      window.clearTimeout(scrollEndTimerRef.current);
+    }
+
+    scrollEndTimerRef.current = window.setTimeout(() => {
+      const index = Math.min(
+        options.length - 1,
+        Math.max(0, Math.round(container.scrollTop / REST_TIMER_ROW_HEIGHT)),
+      );
+      const option = options[index];
+
+      if (option && option.value !== selectedValue) {
+        onSelect(option.value);
+      }
+    }, 80);
+  }
+
+  return (
+    <div className="min-w-0">
+      <div
+        className="relative overflow-hidden rounded-[16px] px-1"
+        style={{ height: REST_TIMER_PICKER_HEIGHT }}
+      >
+        <div className="pointer-events-none absolute inset-x-1 top-1/2 z-0 h-9 -translate-y-1/2 rounded-[10px] bg-emerald-500/85 shadow-sm shadow-emerald-950/30" />
+        <div
+          aria-label="Rest duration"
+          className="relative z-10 h-full snap-y snap-mandatory overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          onScroll={handleScroll}
+          ref={scrollRef}
+          role="listbox"
+          style={{
+            paddingBottom: REST_TIMER_SELECTED_ROW_OFFSET,
+            paddingTop: REST_TIMER_SELECTED_ROW_OFFSET,
+          }}
+        >
+          {options.map((option, index) => (
+            <button
+              type="button"
+              onClick={() => onSelect(option.value)}
+              key={option.value}
+              aria-selected={selectedValue === option.value}
+              className={
+                selectedValue === option.value
+                  ? "flex w-full snap-center items-center justify-center rounded-[10px] px-2 text-base font-bold text-white"
+                  : `flex w-full snap-center items-center justify-center rounded-[10px] px-2 text-base font-semibold text-zinc-400 transition active:bg-white/[0.05] ${getRestWheelFadeClassName(index, selectedIndex)}`
+              }
+              role="option"
+              style={{ height: REST_TIMER_ROW_HEIGHT }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <div
+          className="pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-[#181818]/80 to-transparent"
+          style={{ height: REST_TIMER_ROW_HEIGHT }}
+        />
+        <div
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-[#181818]/80 to-transparent"
+          style={{ height: REST_TIMER_ROW_HEIGHT }}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -3153,6 +3463,57 @@ function formatVolumeSummary(value: number, unit: "lbs" | "kg") {
   }
 
   return `${formatDecimal(value.toFixed(2))} ${unit}`;
+}
+
+function buildRestTimerOptions() {
+  const options: Array<{ label: string; value: number }> = [
+    { label: "OFF", value: 0 },
+  ];
+
+  for (let seconds = 5; seconds <= 120; seconds += 5) {
+    options.push({ label: formatRestDuration(seconds), value: seconds });
+  }
+
+  for (let seconds = 135; seconds <= 300; seconds += 15) {
+    options.push({ label: formatRestDuration(seconds), value: seconds });
+  }
+
+  return options;
+}
+
+function getRestWheelFadeClassName(index: number, selectedIndex: number) {
+  const distance = Math.abs(index - selectedIndex);
+
+  if (distance === 1) {
+    return "opacity-80";
+  }
+
+  if (distance === 2) {
+    return "opacity-55";
+  }
+
+  if (distance >= 3) {
+    return "opacity-30";
+  }
+
+  return "";
+}
+
+function formatRestDuration(seconds: number | null) {
+  if (!seconds) {
+    return "OFF";
+  }
+
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+
+  const minutes = Math.floor(seconds / 60);
+  const remainderSeconds = seconds % 60;
+
+  return remainderSeconds === 0
+    ? `${minutes}:00`
+    : `${minutes}:${remainderSeconds.toString().padStart(2, "0")}`;
 }
 
 function formatDecimal(value: string) {

@@ -2,7 +2,7 @@
 
 type ExerciseThumbProps = {
   name: string;
-  size?: "sm" | "md" | "lg";
+  size?: "xs" | "sm" | "md" | "lg";
 };
 
 export function ExerciseThumb({ name, size = "md" }: ExerciseThumbProps) {
@@ -10,6 +10,8 @@ export function ExerciseThumb({ name, size = "md" }: ExerciseThumbProps) {
   const sizeClass =
     size === "lg"
       ? "h-16 w-16 text-lg"
+      : size === "xs"
+        ? "h-9 w-9 text-xs"
       : size === "sm"
         ? "h-[42px] w-[42px] text-sm"
         : "h-12 w-12 text-base";

@@ -2,7 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useActiveWorkout, useElapsedSeconds } from "./active-workout-context";
+import {
+  useActiveWorkout,
+  useElapsedSeconds,
+  useRestTimerRemainingSeconds,
+} from "./active-workout-context";
 import type { ActiveWorkoutSession } from "./active-workout-context";
 import { ConfirmSheet } from "./confirm-sheet";
 import { useToast } from "./toast";
@@ -17,6 +21,9 @@ export function ActiveWorkoutCard({
   const toast = useToast();
   const { clear, requestOpenLive } = useActiveWorkout();
   const elapsedSeconds = useElapsedSeconds(session.started_at);
+  const remainingRestSeconds = useRestTimerRemainingSeconds();
+  const isResting =
+    Boolean(session.active_rest_started_at) && remainingRestSeconds > 0;
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [isDiscarding, setIsDiscarding] = useState(false);
   const [discardError, setDiscardError] = useState<string | null>(null);
@@ -77,10 +84,12 @@ export function ActiveWorkoutCard({
               <span className="flex min-w-0 items-center gap-2">
                 <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-emerald-400" />
                 <span className="shrink-0 text-sm font-semibold text-white">
-                  Workout
+                  {isResting ? "Rest" : "Workout"}
                 </span>
                 <span className="min-w-0 truncate font-mono text-sm font-semibold text-zinc-300">
-                  {formatElapsedShort(elapsedSeconds)}
+                  {isResting
+                    ? formatCountdown(remainingRestSeconds)
+                    : formatElapsedShort(elapsedSeconds)}
                 </span>
               </span>
               <span className="mt-1 block truncate text-sm font-medium text-zinc-500">
@@ -167,6 +176,13 @@ function formatElapsedShort(totalSeconds: number) {
   }
 
   return `${seconds}s`;
+}
+
+function formatCountdown(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
 type IconProps = {

@@ -10,18 +10,21 @@ type SettingsResponse = {
   weight_unit: WeightUnit;
   default_weight_unit: WeightUnit;
   silence_success_toasts: boolean;
+  sound_enabled: boolean;
 };
 
 function toSettingsResponse(settings: {
   id: number;
   defaultWeightUnit: WeightUnit;
   silenceSuccessToasts: boolean;
+  soundEnabled: boolean;
 }): SettingsResponse {
   return {
     id: settings.id,
     weight_unit: settings.defaultWeightUnit,
     default_weight_unit: settings.defaultWeightUnit,
     silence_success_toasts: settings.silenceSuccessToasts,
+    sound_enabled: settings.soundEnabled,
   };
 }
 
@@ -31,6 +34,7 @@ function badRequest(message: string) {
 
 type SettingsPatch = {
   silenceSuccessToasts?: boolean;
+  soundEnabled?: boolean;
   weightUnit?: WeightUnit;
 };
 
@@ -68,14 +72,26 @@ function readSettingsPatchBody(value: unknown) {
     patch.silenceSuccessToasts = body.silence_success_toasts;
   }
 
+  if ("sound_enabled" in body) {
+    if (typeof body.sound_enabled !== "boolean") {
+      return {
+        ok: false as const,
+        message: "sound_enabled must be a boolean.",
+      };
+    }
+
+    patch.soundEnabled = body.sound_enabled;
+  }
+
   if (
     patch.weightUnit === undefined &&
-    patch.silenceSuccessToasts === undefined
+    patch.silenceSuccessToasts === undefined &&
+    patch.soundEnabled === undefined
   ) {
     return {
       ok: false as const,
       message:
-        'Request body must include "weight_unit" or "silence_success_toasts".',
+        'Request body must include "weight_unit", "silence_success_toasts", or "sound_enabled".',
     };
   }
 
@@ -89,6 +105,7 @@ export async function GET() {
       id: true,
       defaultWeightUnit: true,
       silenceSuccessToasts: true,
+      soundEnabled: true,
     },
   });
 
@@ -119,11 +136,15 @@ export async function PATCH(request: Request) {
       ...(parsedBody.patch.silenceSuccessToasts !== undefined
         ? { silenceSuccessToasts: parsedBody.patch.silenceSuccessToasts }
         : {}),
+      ...(parsedBody.patch.soundEnabled !== undefined
+        ? { soundEnabled: parsedBody.patch.soundEnabled }
+        : {}),
     },
     select: {
       id: true,
       defaultWeightUnit: true,
       silenceSuccessToasts: true,
+      soundEnabled: true,
     },
   });
 

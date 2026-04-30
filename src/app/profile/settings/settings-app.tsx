@@ -11,6 +11,7 @@ type Settings = {
   weight_unit: WeightUnit;
   default_weight_unit: WeightUnit;
   silence_success_toasts: boolean;
+  sound_enabled: boolean;
 };
 
 export function SettingsApp() {
@@ -27,6 +28,7 @@ export function SettingsApp() {
       setSettings(appSettings);
       writeAppSettingsCache({
         silenceSuccessToasts: appSettings.silence_success_toasts,
+        soundEnabled: appSettings.sound_enabled,
       });
     } catch (loadError) {
       setError(getErrorMessage(loadError));
@@ -75,9 +77,9 @@ export function SettingsApp() {
               label="Notifications"
               value={
                 settings
-                  ? settings.silence_success_toasts
-                    ? "Off"
-                    : "On"
+                  ? settings.sound_enabled
+                    ? "Sound on"
+                    : "Sound off"
                   : "Unavailable"
               }
             />

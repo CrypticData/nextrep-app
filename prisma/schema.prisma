@@ -33,6 +33,7 @@ model AppSettings {
   id                   Int        @id @default(1)
   defaultWeightUnit    WeightUnit @default(lbs) @map("default_weight_unit")
   silenceSuccessToasts Boolean    @default(true) @map("silence_success_toasts")
+  soundEnabled         Boolean    @default(true) @map("sound_enabled")
   createdAt            DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -69,6 +70,7 @@ model Exercise {
   exerciseType         ExerciseType @default(weight_reps) @map("exercise_type")
   equipmentTypeId      String       @map("equipment_type_id") @db.Uuid
   primaryMuscleGroupId String       @map("primary_muscle_group_id") @db.Uuid
+  defaultRestSeconds   Int?         @map("default_rest_seconds")
   createdAt            DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -122,15 +124,18 @@ model BodyweightRecord {
 }
 
 model WorkoutSession {
-  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name              String?
-  description       String?
-  status            WorkoutStatus @default(active)
-  defaultWeightUnit WeightUnit    @default(lbs) @map("default_weight_unit")
-  startedAt         DateTime      @default(now()) @map("started_at") @db.Timestamptz(6)
-  endedAt           DateTime?     @map("ended_at") @db.Timestamptz(6)
-  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                                      String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                                    String?
+  description                             String?
+  status                                  WorkoutStatus @default(active)
+  defaultWeightUnit                       WeightUnit    @default(lbs) @map("default_weight_unit")
+  startedAt                               DateTime      @default(now()) @map("started_at") @db.Timestamptz(6)
+  endedAt                                 DateTime?     @map("ended_at") @db.Timestamptz(6)
+  activeRestStartedAt                     DateTime?     @map("active_rest_started_at") @db.Timestamptz(6)
+  activeRestDurationSeconds               Int?          @map("active_rest_duration_seconds")
+  activeRestWorkoutSessionExerciseId      String?       @map("active_rest_workout_session_exercise_id") @db.Uuid
+  createdAt                               DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                               DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   exercises WorkoutSessionExercise[]
 
@@ -154,6 +159,7 @@ model WorkoutSessionExercise {
   equipmentNameSnapshot          String?     @map("equipment_name_snapshot")
   primaryMuscleGroupNameSnapshot String?     @map("primary_muscle_group_name_snapshot")
   notes                          String?
+  restSeconds                    Int?        @map("rest_seconds")
   createdAt                      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                      DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 

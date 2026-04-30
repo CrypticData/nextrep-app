@@ -1019,6 +1019,7 @@ function ExerciseDetail({
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [historyReloadRequest, setHistoryReloadRequest] = useState(0);
+  const [activeTab, setActiveTab] = useState<"summary" | "history">("summary");
   const secondaryText =
     exercise.secondary_muscle_groups.length > 0
       ? exercise.secondary_muscle_groups.map((muscle) => muscle.name).join(", ")
@@ -1067,24 +1068,38 @@ function ExerciseDetail({
         </div>
       ) : null}
 
-      <div className="rounded-3xl border border-white/10 bg-[#181818] p-4">
-        <div className="flex items-start gap-4">
-          <ExerciseThumb name={exercise.primary_muscle_group.name} size="lg" />
-          <div className="min-w-0 flex-1">
-            <p className="text-xl font-semibold text-white">{exercise.name}</p>
-            <p className="mt-1 text-sm text-zinc-500">
-              {exercise.equipment_type.name}
+      <div className="flex gap-6 border-b border-white/10">
+        <button
+          type="button"
+          onClick={() => setActiveTab("summary")}
+          className={
+            activeTab === "summary"
+              ? "border-b-2 border-emerald-400 px-1 pb-3 text-sm font-semibold text-emerald-300"
+              : "border-b-2 border-transparent px-1 pb-3 text-sm font-semibold text-zinc-500"
+          }
+        >
+          Summary
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("history")}
+          className={
+            activeTab === "history"
+              ? "border-b-2 border-emerald-400 px-1 pb-3 text-sm font-semibold text-emerald-300"
+              : "border-b-2 border-transparent px-1 pb-3 text-sm font-semibold text-zinc-500"
+          }
+        >
+          History
+        </button>
+      </div>
+
+      {activeTab === "summary" ? (
+        <div className="mt-4 grid grid-cols-1 gap-3">
+          {exercise.description ? (
+            <p className="rounded-2xl bg-white/[0.04] p-3 text-sm leading-6 text-zinc-300">
+              {exercise.description}
             </p>
-          </div>
-        </div>
-
-        {exercise.description ? (
-          <p className="mt-5 rounded-2xl bg-white/[0.04] p-3 text-sm leading-6 text-zinc-300">
-            {exercise.description}
-          </p>
-        ) : null}
-
-        <div className="mt-5 grid grid-cols-1 gap-3">
+          ) : null}
           <DetailRow
             label="Primary"
             value={exercise.primary_muscle_group.name}
@@ -1096,28 +1111,19 @@ function ExerciseDetail({
             value={getExerciseTypeLabel(exercise.exercise_type)}
           />
         </div>
-      </div>
-
-      <div className="mt-5 border-b border-white/10">
-        <button
-          type="button"
-          className="border-b-2 border-emerald-400 px-1 pb-3 text-sm font-semibold text-emerald-300"
-        >
-          History
-        </button>
-      </div>
-
-      <ExerciseHistoryPanel
-        exercise={exercise}
-        exerciseType={exercise.exercise_type}
-        history={history}
-        isLoading={isHistoryLoading}
-        loadError={historyError}
-        onRetry={() => {
-          setHistory(null);
-          setHistoryReloadRequest((request) => request + 1);
-        }}
-      />
+      ) : (
+        <ExerciseHistoryPanel
+          exercise={exercise}
+          exerciseType={exercise.exercise_type}
+          history={history}
+          isLoading={isHistoryLoading}
+          loadError={historyError}
+          onRetry={() => {
+            setHistory(null);
+            setHistoryReloadRequest((request) => request + 1);
+          }}
+        />
+      )}
     </div>
   );
 }

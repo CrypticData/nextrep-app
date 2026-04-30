@@ -2,14 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useRef } from "react";
+import type { MutableRefObject, ReactNode } from "react";
 import {
   readAppSettingsCache,
   writeAppSettingsCache,
 } from "./app-settings-cache";
 import { ActiveWorkoutCard } from "./active-workout-card";
-import { useActiveWorkout } from "./active-workout-context";
+import {
+  useActiveWorkout,
+  useRestTimerRemainingSeconds,
+} from "./active-workout-context";
 import {
   TOP_BAR_BORDER_CLASS,
   TOP_BAR_ROW_CLASS,
@@ -26,14 +29,17 @@ type AppShellProps = {
   children: ReactNode;
   hideFloatingCard?: boolean;
   hideHeader?: boolean;
+  hideRestTimer?: boolean;
   hideBottomNav?: boolean;
   mainClassName?: string;
+  showRestTimer?: boolean;
   subpage?: boolean;
   title: string;
 };
 
 type AppSettingsResponse = {
   silence_success_toasts: boolean;
+  sound_enabled: boolean;
 };
 
 const navItems = [
@@ -50,8 +56,10 @@ export function AppShell({
   children,
   hideFloatingCard = false,
   hideHeader = false,
+  hideRestTimer = false,
   hideBottomNav = false,
   mainClassName = "safe-main-x pb-6 pt-4",
+  showRestTimer = false,
   subpage = false,
   title,
 }: AppShellProps) {
@@ -84,6 +92,7 @@ export function AppShell({
         const settings = (await response.json()) as AppSettingsResponse;
         writeAppSettingsCache({
           silenceSuccessToasts: settings.silence_success_toasts,
+          soundEnabled: settings.sound_enabled,
         });
       } catch {
         // Cache hydration is best-effort; errors still show without it.
@@ -168,6 +177,8 @@ export function AppShell({
           {children}
         </main>
 
+        {showRestTimer && !hideRestTimer ? <RestTimerBar /> : null}
+
         {showFloatingCard ? <ActiveWorkoutCard session={session} /> : null}
 
         {showBottomNav ? <BottomNav /> : null}
@@ -175,6 +186,119 @@ export function AppShell({
       </div>
     </div>
   );
+}
+
+function RestTimerBar() {
+  const { adjustRest, session, skipRest } = useActiveWorkout();
+  const remainingSeconds = useRestTimerRemainingSeconds();
+  const previousRemainingRef = useRef(remainingSeconds);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const hasActiveRest = Boolean(session?.active_rest_started_at);
+  const durationSeconds = session?.active_rest_duration_seconds ?? 0;
+  const progress =
+    durationSeconds > 0
+      ? Math.max(0, Math.min(100, (remainingSeconds / durationSeconds) * 100))
+      : 0;
+
+  useEffect(() => {
+    if (
+      hasActiveRest &&
+      previousRemainingRef.current > 0 &&
+      remainingSeconds === 0
+    ) {
+      if (readAppSettingsCache()?.soundEnabled ?? true) {
+        playRestEndSound(audioContextRef);
+      }
+
+      void skipRest().catch(() => undefined);
+    }
+
+    previousRemainingRef.current = remainingSeconds;
+  }, [hasActiveRest, remainingSeconds, skipRest]);
+
+  if (!hasActiveRest || remainingSeconds <= 0) {
+    return null;
+  }
+
+  return (
+    <div className="safe-floating-card shrink-0 border-t border-white/10 bg-[#181818] px-3 pb-2 pt-2 shadow-2xl shadow-black/40">
+      <div className="mb-2 h-0.5 overflow-hidden rounded-full bg-white/10">
+        <div
+          className="h-full rounded-full bg-emerald-400 transition-[width] duration-300"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      <div className="grid grid-cols-[52px_1fr_52px_64px] items-center gap-2">
+        <button
+          type="button"
+          onClick={() => void adjustRest(-15)}
+          className="h-10 rounded-xl bg-white/[0.08] text-sm font-bold text-emerald-100 transition active:scale-95"
+        >
+          -15
+        </button>
+        <div className="text-center font-mono text-3xl font-semibold leading-none text-white">
+          {formatCountdown(remainingSeconds)}
+        </div>
+        <button
+          type="button"
+          onClick={() => void adjustRest(15)}
+          className="h-10 rounded-xl bg-white/[0.08] text-sm font-bold text-emerald-100 transition active:scale-95"
+        >
+          +15
+        </button>
+        <button
+          type="button"
+          onClick={() => void skipRest()}
+          className="h-10 rounded-xl bg-emerald-500 px-3 text-sm font-bold text-white transition active:scale-95"
+        >
+          Skip
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function playRestEndSound(
+  audioContextRef: MutableRefObject<AudioContext | null>,
+) {
+  try {
+    const AudioContextConstructor =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
+
+    if (!AudioContextConstructor) {
+      return;
+    }
+
+    const audioContext =
+      audioContextRef.current ?? new AudioContextConstructor();
+    audioContextRef.current = audioContext;
+
+    const oscillator = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    const now = audioContext.currentTime;
+
+    oscillator.type = "triangle";
+    oscillator.frequency.setValueAtTime(880, now);
+    oscillator.frequency.exponentialRampToValueAtTime(660, now + 0.45);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.16, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.75);
+    oscillator.connect(gain);
+    gain.connect(audioContext.destination);
+    oscillator.start(now);
+    oscillator.stop(now + 0.8);
+  } catch {
+    // Browser audio permissions are best-effort for this v1 timer.
+  }
+}
+
+function formatCountdown(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
 function BottomNav() {

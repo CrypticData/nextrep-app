@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { isUuid } from "@/lib/exercise-api";
 import {
-  parseWorkoutExerciseNotesBody,
+  parseWorkoutExercisePatchBody,
   removeExerciseFromActiveWorkout,
   toWorkoutSessionExerciseResponse,
-  updateActiveWorkoutExerciseNotes,
+  updateActiveWorkoutExercise,
 } from "@/lib/workout-exercise-api";
 
 export const dynamic = "force-dynamic";
@@ -70,19 +70,15 @@ export async function PATCH(
     return badRequest("Request body must be valid JSON.");
   }
 
-  const parsedNotes = parseWorkoutExerciseNotesBody(body);
+  const parsedPatch = parseWorkoutExercisePatchBody(body);
 
-  if (!parsedNotes) {
-    return badRequest("Request body must be an object.");
+  if (!parsedPatch.ok) {
+    return badRequest(parsedPatch.message);
   }
 
-  if (!parsedNotes.ok) {
-    return badRequest(parsedNotes.message);
-  }
-
-  const result = await updateActiveWorkoutExerciseNotes(
+  const result = await updateActiveWorkoutExercise(
     workoutExerciseId,
-    parsedNotes.notes,
+    parsedPatch.patch,
   );
 
   if (result.kind === "workout_exercise_not_found") {

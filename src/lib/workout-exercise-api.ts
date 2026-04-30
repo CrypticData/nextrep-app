@@ -37,6 +37,7 @@ export const workoutSessionExerciseSelect = {
   equipmentNameSnapshot: true,
   primaryMuscleGroupNameSnapshot: true,
   notes: true,
+  restSeconds: true,
   createdAt: true,
   updatedAt: true,
   exercise: {
@@ -86,6 +87,7 @@ export type WorkoutSessionExerciseResponse = {
   equipment_name_snapshot: string | null;
   primary_muscle_group_name_snapshot: string | null;
   notes: string | null;
+  rest_seconds: number | null;
   sets: WorkoutSetResponse[];
   created_at: string;
   updated_at: string;
@@ -136,6 +138,56 @@ export function parseWorkoutExerciseNotesBody(value: unknown) {
   }
 
   return { ok: true as const, notes: trimmedNotes || null };
+}
+
+export function parseWorkoutExercisePatchBody(value: unknown) {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return { ok: false as const, message: "Request body must be an object." };
+  }
+
+  const body = value as Record<string, unknown>;
+  const patch: { notes?: string | null; restSeconds?: number | null } = {};
+
+  if ("notes" in body) {
+    const parsedNotes = parseWorkoutExerciseNotesBody(value);
+
+    if (!parsedNotes) {
+      return { ok: false as const, message: "Request body must be an object." };
+    }
+
+    if (!parsedNotes.ok) {
+      return parsedNotes;
+    }
+
+    patch.notes = parsedNotes.notes;
+  }
+
+  if ("rest_seconds" in body) {
+    if (body.rest_seconds === null) {
+      patch.restSeconds = null;
+    } else if (
+      typeof body.rest_seconds === "number" &&
+      Number.isInteger(body.rest_seconds) &&
+      body.rest_seconds >= 5 &&
+      body.rest_seconds <= 300
+    ) {
+      patch.restSeconds = body.rest_seconds;
+    } else {
+      return {
+        ok: false as const,
+        message: "rest_seconds must be null or an integer between 5 and 300.",
+      };
+    }
+  }
+
+  if (!("notes" in patch) && !("restSeconds" in patch)) {
+    return {
+      ok: false as const,
+      message: 'Request body must include "notes" or "rest_seconds".',
+    };
+  }
+
+  return { ok: true as const, patch };
 }
 
 export function parseWorkoutExerciseOrderBody(value: unknown) {
@@ -202,6 +254,7 @@ export function toWorkoutSessionExerciseResponse(
     primary_muscle_group_name_snapshot:
       workoutExercise.primaryMuscleGroupNameSnapshot,
     notes: workoutExercise.notes,
+    rest_seconds: workoutExercise.restSeconds,
     sets: workoutExercise.sets.map(toWorkoutSetResponse),
     created_at: workoutExercise.createdAt.toISOString(),
     updated_at: workoutExercise.updatedAt.toISOString(),
@@ -252,6 +305,7 @@ export async function addExerciseToActiveWorkoutSession(
         equipmentType: { select: { name: true } },
         primaryMuscleGroup: { select: { name: true } },
         weightUnitPreference: { select: { weightUnit: true } },
+        defaultRestSeconds: true,
       },
     });
 
@@ -286,6 +340,7 @@ export async function addExerciseToActiveWorkoutSession(
         exerciseNameSnapshot: exercise.name,
         equipmentNameSnapshot: exercise.equipmentType.name,
         primaryMuscleGroupNameSnapshot: exercise.primaryMuscleGroup.name,
+        restSeconds: exercise.defaultRestSeconds,
         sets: {
           create: {
             rowIndex: 1,
@@ -417,6 +472,38 @@ export async function updateActiveWorkoutExerciseNotes(
   const updatedWorkoutExercise = await prisma.workoutSessionExercise.update({
     where: { id: workoutExerciseId },
     data: { notes },
+    select: workoutSessionExerciseSelect,
+  });
+
+  return { kind: "ok" as const, workoutExercise: updatedWorkoutExercise };
+}
+
+export async function updateActiveWorkoutExercise(
+  workoutExerciseId: string,
+  patch: { notes?: string | null; restSeconds?: number | null },
+) {
+  const workoutExercise = await prisma.workoutSessionExercise.findUnique({
+    where: { id: workoutExerciseId },
+    select: {
+      id: true,
+      workoutSession: {
+        select: {
+          status: true,
+        },
+      },
+    },
+  });
+
+  if (!workoutExercise || workoutExercise.workoutSession.status !== "active") {
+    return { kind: "workout_exercise_not_found" as const };
+  }
+
+  const updatedWorkoutExercise = await prisma.workoutSessionExercise.update({
+    where: { id: workoutExerciseId },
+    data: {
+      ...("notes" in patch ? { notes: patch.notes } : {}),
+      ...("restSeconds" in patch ? { restSeconds: patch.restSeconds } : {}),
+    },
     select: workoutSessionExerciseSelect,
   });
 

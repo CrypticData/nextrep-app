@@ -11,6 +11,7 @@ type Settings = {
   weight_unit: WeightUnit;
   default_weight_unit: WeightUnit;
   silence_success_toasts: boolean;
+  sound_enabled: boolean;
 };
 
 export function UnitsSettingsApp() {
@@ -29,6 +30,7 @@ export function UnitsSettingsApp() {
       setUnit(settings.weight_unit);
       writeAppSettingsCache({
         silenceSuccessToasts: settings.silence_success_toasts,
+        soundEnabled: settings.sound_enabled,
       });
     } catch (loadError) {
       setError(getErrorMessage(loadError));
@@ -64,6 +66,7 @@ export function UnitsSettingsApp() {
       setUnit(settings.weight_unit);
       writeAppSettingsCache({
         silenceSuccessToasts: settings.silence_success_toasts,
+        soundEnabled: settings.sound_enabled,
       });
       toast.success("Units updated");
     } catch (saveError) {
