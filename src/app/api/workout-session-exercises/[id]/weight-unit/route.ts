@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { isUuid } from "@/lib/exercise-api";
 import {
+  findActiveWorkoutExerciseResponseContext,
   parseWorkoutExerciseWeightUnitBody,
-  toWorkoutSessionExerciseResponse,
+  toWorkoutSessionExerciseResponseWithPrevious,
   updateWorkoutExerciseWeightUnit,
 } from "@/lib/workout-exercise-api";
 
@@ -71,7 +72,18 @@ export async function PATCH(
     );
   }
 
+  const contextResult = await findActiveWorkoutExerciseResponseContext(
+    result.workoutExercise.id,
+  );
+
+  if (contextResult.kind === "workout_exercise_not_found") {
+    return notFound();
+  }
+
   return NextResponse.json(
-    toWorkoutSessionExerciseResponse(result.workoutExercise),
+    await toWorkoutSessionExerciseResponseWithPrevious(
+      contextResult.targetWorkoutExercise,
+      contextResult.workoutExercises,
+    ),
   );
 }

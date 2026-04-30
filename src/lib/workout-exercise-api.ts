@@ -4,6 +4,11 @@ import type { WorkoutSessionExerciseGetPayload } from "@/generated/prisma/models
 import { hasWeightInput, storesInputWeightUnit } from "@/lib/exercise-type";
 import { isUuid } from "@/lib/exercise-api";
 import { prisma } from "@/lib/prisma";
+import {
+  computePreviousForSession,
+  findTemplateSeedSetsForFirstOccurrence,
+  type PreviousValue,
+} from "@/lib/previous-quick-fill";
 import { convertWeight, readWeightUnit } from "@/lib/weight-units";
 
 export const workoutSetSelect = {
@@ -11,6 +16,7 @@ export const workoutSetSelect = {
   rowIndex: true,
   setNumber: true,
   setType: true,
+  parentSetId: true,
   reps: true,
   rpe: true,
   checked: true,
@@ -72,6 +78,7 @@ export type WorkoutSetResponse = {
   bodyweight_unit: WeightUnit | null;
   volume_value: string | null;
   volume_unit: WeightUnit | null;
+  previous: PreviousValue | null;
   created_at: string;
   updated_at: string;
 };
@@ -241,6 +248,7 @@ export function parseWorkoutExerciseOrderBody(value: unknown) {
 
 export function toWorkoutSessionExerciseResponse(
   workoutExercise: SelectedWorkoutSessionExercise,
+  previousBySetId: Map<string, PreviousValue | null> = new Map(),
 ): WorkoutSessionExerciseResponse {
   return {
     id: workoutExercise.id,
@@ -255,9 +263,74 @@ export function toWorkoutSessionExerciseResponse(
       workoutExercise.primaryMuscleGroupNameSnapshot,
     notes: workoutExercise.notes,
     rest_seconds: workoutExercise.restSeconds,
-    sets: workoutExercise.sets.map(toWorkoutSetResponse),
+    sets: workoutExercise.sets.map((set) =>
+      toWorkoutSetResponse(set, previousBySetId),
+    ),
     created_at: workoutExercise.createdAt.toISOString(),
     updated_at: workoutExercise.updatedAt.toISOString(),
+  };
+}
+
+export async function toWorkoutSessionExerciseResponsesWithPrevious(
+  workoutExercises: SelectedWorkoutSessionExercise[],
+) {
+  const previousBySetId = await computePreviousForSession({
+    exercises: workoutExercises,
+  });
+
+  return workoutExercises.map((workoutExercise) =>
+    toWorkoutSessionExerciseResponse(workoutExercise, previousBySetId),
+  );
+}
+
+export async function toWorkoutSessionExerciseResponseWithPrevious(
+  workoutExercise: SelectedWorkoutSessionExercise,
+  workoutExercises: SelectedWorkoutSessionExercise[] = [workoutExercise],
+) {
+  const previousBySetId = await computePreviousForSession({
+    exercises: workoutExercises,
+  });
+
+  return toWorkoutSessionExerciseResponse(workoutExercise, previousBySetId);
+}
+
+export async function findActiveWorkoutExerciseResponseContext(
+  workoutExerciseId: string,
+) {
+  const workoutExercise = await prisma.workoutSessionExercise.findUnique({
+    where: { id: workoutExerciseId },
+    select: {
+      id: true,
+      workoutSessionId: true,
+      workoutSession: {
+        select: {
+          status: true,
+        },
+      },
+    },
+  });
+
+  if (!workoutExercise || workoutExercise.workoutSession.status !== "active") {
+    return { kind: "workout_exercise_not_found" as const };
+  }
+
+  const workoutExercises = await prisma.workoutSessionExercise.findMany({
+    where: { workoutSessionId: workoutExercise.workoutSessionId },
+    orderBy: { orderIndex: "asc" },
+    select: workoutSessionExerciseSelect,
+  });
+  const targetWorkoutExercise = workoutExercises.find(
+    (candidate) => candidate.id === workoutExercise.id,
+  );
+
+  if (!targetWorkoutExercise) {
+    return { kind: "workout_exercise_not_found" as const };
+  }
+
+  return {
+    kind: "ok" as const,
+    targetWorkoutExercise,
+    workoutExercises,
   };
 }
 
@@ -313,7 +386,7 @@ export async function addExerciseToActiveWorkoutSession(
       return { kind: "exercise_not_found" as const };
     }
 
-    const [settings, lastWorkoutExercise] = await Promise.all([
+    const [settings, lastWorkoutExercise, sameExerciseCount] = await Promise.all([
       tx.appSettings.findUniqueOrThrow({
         where: { id: 1 },
         select: { defaultWeightUnit: true },
@@ -323,6 +396,12 @@ export async function addExerciseToActiveWorkoutSession(
         orderBy: { orderIndex: "desc" },
         select: { orderIndex: true },
       }),
+      tx.workoutSessionExercise.count({
+        where: {
+          workoutSessionId,
+          exerciseId: exercise.id,
+        },
+      }),
     ]);
 
     const inputWeightUnit = resolveWorkoutExerciseInputUnit(
@@ -330,6 +409,18 @@ export async function addExerciseToActiveWorkoutSession(
       exercise.weightUnitPreference?.weightUnit,
       settings.defaultWeightUnit,
     );
+
+    const seedSets =
+      sameExerciseCount === 0
+        ? await findTemplateSeedSetsForFirstOccurrence({
+            db: tx,
+            exerciseId: exercise.id,
+          })
+        : [];
+    const initialSetInputs =
+      sameExerciseCount === 0 && seedSets.length > 0
+        ? buildSeededSetCreateInputs(seedSets)
+        : [{ rowIndex: 1, setNumber: 1, setType: "normal" as const }];
 
     const workoutExercise = await tx.workoutSessionExercise.create({
       data: {
@@ -342,11 +433,7 @@ export async function addExerciseToActiveWorkoutSession(
         primaryMuscleGroupNameSnapshot: exercise.primaryMuscleGroup.name,
         restSeconds: exercise.defaultRestSeconds,
         sets: {
-          create: {
-            rowIndex: 1,
-            setNumber: 1,
-            setType: "normal",
-          },
+          create: initialSetInputs,
         },
       },
       select: workoutSessionExerciseSelect,
@@ -675,6 +762,7 @@ function resolveWorkoutExerciseInputUnit(
 
 export function toWorkoutSetResponse(
   set: SelectedWorkoutSessionExercise["sets"][number],
+  previousBySetId: Map<string, PreviousValue | null> = new Map(),
 ) {
   return {
     id: set.id,
@@ -693,7 +781,31 @@ export function toWorkoutSetResponse(
     bodyweight_unit: set.bodyweightUnit,
     volume_value: set.volumeValue?.toFixed(2) ?? null,
     volume_unit: set.volumeUnit,
+    previous: previousBySetId.get(set.id) ?? null,
     created_at: set.createdAt.toISOString(),
     updated_at: set.updatedAt.toISOString(),
   };
+}
+
+function buildSeededSetCreateInputs(seedSets: { setType: "normal" | "warmup" | "failure" | "drop" }[]) {
+  let nextSetNumber = 1;
+
+  return seedSets.map((set, index) => {
+    if (set.setType === "warmup") {
+      return {
+        rowIndex: index + 1,
+        setNumber: null,
+        setType: "warmup" as const,
+      };
+    }
+
+    const setNumber = nextSetNumber;
+    nextSetNumber += 1;
+
+    return {
+      rowIndex: index + 1,
+      setNumber,
+      setType: set.setType === "failure" ? ("failure" as const) : ("normal" as const),
+    };
+  });
 }

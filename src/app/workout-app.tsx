@@ -75,8 +75,14 @@ type WorkoutSet = {
   bodyweight_unit: "lbs" | "kg" | null;
   volume_value: string | null;
   volume_unit: "lbs" | "kg" | null;
+  previous: PreviousValue | null;
   created_at: string;
   updated_at: string;
+};
+
+type PreviousValue = {
+  weight: string | null;
+  reps: number | null;
 };
 
 type WorkoutSessionExercise = {
@@ -2448,6 +2454,7 @@ function WorkoutSetEditorRow({
     !set.bodyweight_value;
   const savingTone = isSaving ? "opacity-70" : "";
   const weightPlaceholder = showWeightInput ? "0" : "-";
+  const previousDisplay = formatPreviousValue(set.previous, exerciseType);
 
   return (
     <div className={`bg-[#101010] ${savingTone}`}>
@@ -2461,9 +2468,41 @@ function WorkoutSetEditorRow({
           {formatSetLabel(set)}
         </button>
 
-        <span className="truncate pr-2 text-base font-semibold text-zinc-600">
-          -
-        </span>
+        <button
+          type="button"
+          onClick={() => {
+            if (!set.previous?.reps) {
+              return;
+            }
+
+            const nextWeightValue =
+              showWeightInput && set.previous.weight !== null
+                ? set.previous.weight
+                : weightValue;
+            const nextRepsValue = set.previous.reps.toString();
+
+            if (showWeightInput) {
+              setWeightValue(nextWeightValue);
+            }
+
+            setRepsValue(nextRepsValue);
+            void onUpdate({
+              ...(showWeightInput
+                ? {
+                    weight_input_value: normalizeNullableText(nextWeightValue),
+                    weight_input_unit: weightUnit,
+                  }
+                : { weight_input_value: null }),
+              reps: set.previous.reps,
+              rpe: normalizeNullableText(rpeValue),
+            });
+          }}
+          disabled={!set.previous?.reps}
+          className="truncate pr-2 text-left text-base font-semibold text-zinc-500 transition enabled:text-emerald-200 enabled:active:scale-95 disabled:cursor-default disabled:text-zinc-600"
+          aria-label="Use previous set values"
+        >
+          {previousDisplay}
+        </button>
 
         <div className="flex justify-center">
           {showWeightInput ? (
@@ -2479,7 +2518,7 @@ function WorkoutSetEditorRow({
               value={weightValue}
               onBlur={() => void commitSetValues()}
               onChange={(event) => setWeightValue(event.target.value)}
-              placeholder={weightPlaceholder}
+              placeholder={set.previous?.weight ?? weightPlaceholder}
               className="h-9 w-full min-w-0 rounded-lg border border-transparent bg-transparent px-1 text-center text-lg font-semibold text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-white/[0.04]"
               aria-label={getWeightInputLabel(exerciseType)}
             />
@@ -2502,7 +2541,7 @@ function WorkoutSetEditorRow({
           value={repsValue}
           onBlur={() => void commitSetValues()}
           onChange={(event) => setRepsValue(event.target.value)}
-          placeholder="0"
+          placeholder={set.previous?.reps?.toString() ?? "0"}
           className="h-9 w-full min-w-0 rounded-lg border border-transparent bg-transparent px-1 text-center text-lg font-semibold text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-white/[0.04]"
           aria-label="Reps"
         />
@@ -3430,9 +3469,17 @@ function getWorkoutSummary(
     (workoutExercise) => workoutExercise.sets,
   );
   const volumeValue = sets.reduce((total, set) => {
-    const volume = set.volume_value ? Number(set.volume_value) : 0;
+    if (!set.checked || !set.volume_value || !set.volume_unit) {
+      return total;
+    }
 
-    return Number.isFinite(volume) ? total + volume : total;
+    const volume = Number(set.volume_value);
+
+    if (!Number.isFinite(volume)) {
+      return total;
+    }
+
+    return total + convertWeightValue(volume, set.volume_unit, defaultWeightUnit);
   }, 0);
 
   return {
@@ -3524,6 +3571,33 @@ function formatDecimal(value: string) {
   }
 
   return Number.isInteger(parsed) ? parsed.toString() : parsed.toFixed(2);
+}
+
+function formatPreviousValue(
+  previous: PreviousValue | null,
+  exerciseType: ExerciseType,
+) {
+  if (!previous?.reps) {
+    return "-";
+  }
+
+  if (!hasWeightInput(exerciseType)) {
+    return previous.reps.toString();
+  }
+
+  return `${previous.weight ?? "0.00"} x ${previous.reps}`;
+}
+
+function convertWeightValue(
+  value: number,
+  fromUnit: "lbs" | "kg",
+  toUnit: "lbs" | "kg",
+) {
+  if (fromUnit === toUnit) {
+    return value;
+  }
+
+  return fromUnit === "kg" ? value * LBS_PER_KG : value / LBS_PER_KG;
 }
 
 function convertWorkoutSetInputValue(

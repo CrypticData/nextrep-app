@@ -3,7 +3,7 @@ import { isUuid } from "@/lib/exercise-api";
 import {
   parseWorkoutExerciseOrderBody,
   reorderActiveWorkoutExercises,
-  toWorkoutSessionExerciseResponse,
+  toWorkoutSessionExerciseResponsesWithPrevious,
 } from "@/lib/workout-exercise-api";
 
 export const dynamic = "force-dynamic";
@@ -73,6 +73,6 @@ export async function PATCH(
   }
 
   return NextResponse.json(
-    result.workoutExercises.map(toWorkoutSessionExerciseResponse),
+    await toWorkoutSessionExerciseResponsesWithPrevious(result.workoutExercises),
   );
 }

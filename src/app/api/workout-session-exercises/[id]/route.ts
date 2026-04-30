@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { isUuid } from "@/lib/exercise-api";
 import {
+  findActiveWorkoutExerciseResponseContext,
   parseWorkoutExercisePatchBody,
   removeExerciseFromActiveWorkout,
-  toWorkoutSessionExerciseResponse,
+  toWorkoutSessionExerciseResponseWithPrevious,
+  toWorkoutSessionExerciseResponsesWithPrevious,
   updateActiveWorkoutExercise,
 } from "@/lib/workout-exercise-api";
 
@@ -48,7 +50,7 @@ export async function DELETE(
   }
 
   return NextResponse.json(
-    result.workoutExercises.map(toWorkoutSessionExerciseResponse),
+    await toWorkoutSessionExerciseResponsesWithPrevious(result.workoutExercises),
   );
 }
 
@@ -85,7 +87,18 @@ export async function PATCH(
     return notFound();
   }
 
+  const contextResult = await findActiveWorkoutExerciseResponseContext(
+    result.workoutExercise.id,
+  );
+
+  if (contextResult.kind === "workout_exercise_not_found") {
+    return notFound();
+  }
+
   return NextResponse.json(
-    toWorkoutSessionExerciseResponse(result.workoutExercise),
+    await toWorkoutSessionExerciseResponseWithPrevious(
+      contextResult.targetWorkoutExercise,
+      contextResult.workoutExercises,
+    ),
   );
 }

@@ -2,6 +2,10 @@ import { Prisma } from "@/generated/prisma/client";
 import type { ExerciseType, WeightUnit } from "@/generated/prisma/enums";
 import type { WorkoutSessionGetPayload } from "@/generated/prisma/models/WorkoutSession";
 import { prisma } from "@/lib/prisma";
+import {
+  computeDisplayedSetIdentities,
+  getOriginalSavedPreviousValue,
+} from "@/lib/previous-quick-fill";
 import { convertWeight } from "@/lib/weight-units";
 import { isUuid } from "@/lib/workout-session-api";
 
@@ -40,12 +44,15 @@ const completedWorkoutSelect = {
           rowIndex: true,
           setNumber: true,
           setType: true,
+          parentSetId: true,
           reps: true,
           rpe: true,
           checked: true,
           checkedAt: true,
           weightInputValue: true,
           weightInputUnit: true,
+          weightNormalizedValue: true,
+          weightNormalizedUnit: true,
           volumeValue: true,
           volumeUnit: true,
         },
@@ -120,6 +127,11 @@ export type CompletedWorkoutDetail = {
       rpe: number | null;
       checked: boolean;
       checked_at: string | null;
+      original_saved_identity: string | null;
+      previous: {
+        weight: string | null;
+        reps: number | null;
+      } | null;
     }[];
   }[];
 };
@@ -227,24 +239,48 @@ function toCompletedWorkoutDetail(
     default_weight_unit: session.defaultWeightUnit,
     recorded_set_count: summary.recordedSetCount,
     volume: summary.volume,
-    exercises: session.exercises.map((exercise) => ({
-      id: exercise.id,
-      exercise_id: exercise.exerciseId,
-      order_index: exercise.orderIndex,
-      exercise_name_snapshot: exercise.exerciseNameSnapshot,
-      equipment_name_snapshot: exercise.equipmentNameSnapshot,
-      primary_muscle_group_name_snapshot:
-        exercise.primaryMuscleGroupNameSnapshot,
-      input_weight_unit: exercise.inputWeightUnit,
-      notes: exercise.notes,
-      exercise_type: exercise.exercise?.exerciseType ?? null,
-      recorded_set_count: exercise.sets.length,
-      sets: exercise.sets.map(toCompletedSetDetail),
-    })),
+    exercises: session.exercises.map((exercise) => {
+      const exerciseType = exercise.exercise?.exerciseType ?? "weight_reps";
+      const identities = computeDisplayedSetIdentities(exercise.sets);
+      const targetWeightUnit =
+        exercise.inputWeightUnit ?? session.defaultWeightUnit;
+
+      return {
+        id: exercise.id,
+        exercise_id: exercise.exerciseId,
+        order_index: exercise.orderIndex,
+        exercise_name_snapshot: exercise.exerciseNameSnapshot,
+        equipment_name_snapshot: exercise.equipmentNameSnapshot,
+        primary_muscle_group_name_snapshot:
+          exercise.primaryMuscleGroupNameSnapshot,
+        input_weight_unit: exercise.inputWeightUnit,
+        notes: exercise.notes,
+        exercise_type: exercise.exercise?.exerciseType ?? null,
+        recorded_set_count: exercise.sets.length,
+        sets: exercise.sets.map((set) =>
+          toCompletedSetDetail({
+            exerciseType,
+            originalSavedIdentity: identities.get(set.id) ?? null,
+            set,
+            targetWeightUnit,
+          }),
+        ),
+      };
+    }),
   };
 }
 
-function toCompletedSetDetail(set: CompletedWorkoutSet) {
+function toCompletedSetDetail({
+  exerciseType,
+  originalSavedIdentity,
+  set,
+  targetWeightUnit,
+}: {
+  exerciseType: ExerciseType;
+  originalSavedIdentity: string | null;
+  set: CompletedWorkoutSet;
+  targetWeightUnit: WeightUnit;
+}) {
   return {
     id: set.id,
     row_index: set.rowIndex,
@@ -256,6 +292,12 @@ function toCompletedSetDetail(set: CompletedWorkoutSet) {
     rpe: decimalToNumber(set.rpe),
     checked: set.checked,
     checked_at: set.checkedAt?.toISOString() ?? null,
+    original_saved_identity: originalSavedIdentity,
+    previous: getOriginalSavedPreviousValue({
+      exerciseType,
+      set,
+      targetWeightUnit,
+    }),
   };
 }
 

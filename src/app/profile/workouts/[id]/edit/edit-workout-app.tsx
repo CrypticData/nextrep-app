@@ -107,6 +107,13 @@ type CompletedWorkoutSet = {
   rpe: number | null;
   checked: boolean;
   checked_at: string | null;
+  original_saved_identity: string | null;
+  previous: PreviousValue | null;
+};
+
+type PreviousValue = {
+  weight: string | null;
+  reps: number | null;
 };
 
 type DraftWorkout = {
@@ -148,6 +155,9 @@ type DraftWorkoutSet = {
   repsValue: string;
   rpeValue: string;
   checked: boolean;
+  originalSavedIdentity: string | null;
+  originalPrevious: PreviousValue | null;
+  previous: PreviousValue | null;
 };
 
 type LoadState = "loading" | "ready" | "error";
@@ -803,8 +813,9 @@ function EditableExerciseCard({
       </div>
 
       <div className="mt-4">
-        <div className="grid grid-cols-[42px_minmax(68px,1fr)_46px_56px_38px] items-center border-y border-white/[0.06] bg-[#101010] px-3 py-2.5 text-[10px] font-bold uppercase tracking-[0.09em] text-zinc-500">
+        <div className="grid grid-cols-[42px_minmax(54px,1fr)_62px_46px_56px_38px] items-center border-y border-white/[0.06] bg-[#101010] px-3 py-2.5 text-[10px] font-bold uppercase tracking-[0.09em] text-zinc-500">
           <span>Set</span>
+          <span className="truncate">Previous</span>
           <button
             type="button"
             onClick={() => setIsUnitSheetOpen(true)}
@@ -932,10 +943,11 @@ function EditableSetRow({
   const [isSetTypeSheetOpen, setIsSetTypeSheetOpen] = useState(false);
   const [isRpeSheetOpen, setIsRpeSheetOpen] = useState(false);
   const showWeightInput = hasWeightInput(exercise.exerciseType);
+  const previousDisplay = formatPreviousValue(set.previous, exercise.exerciseType);
 
   return (
     <div className="bg-[#101010]">
-      <div className="grid min-h-[64px] grid-cols-[42px_minmax(68px,1fr)_46px_56px_38px] items-center border-b border-white/[0.05] px-2 py-2.5">
+      <div className="grid min-h-[64px] grid-cols-[42px_minmax(54px,1fr)_62px_46px_56px_38px] items-center border-b border-white/[0.05] px-2 py-2.5">
         <button
           type="button"
           onClick={() => setIsSetTypeSheetOpen(true)}
@@ -943,6 +955,30 @@ function EditableSetRow({
           aria-label="Select set type"
         >
           {formatSetLabel(set)}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            if (!set.previous?.reps) {
+              return;
+            }
+
+            onUpdate({
+              ...(showWeightInput
+                ? {
+                    weightUnit: activeWeightUnit,
+                    weightValue: set.previous.weight ?? "0.00",
+                  }
+                : {}),
+              repsValue: set.previous.reps.toString(),
+            });
+          }}
+          disabled={!set.previous?.reps}
+          className="truncate pr-2 text-left text-base font-semibold text-zinc-500 transition enabled:text-emerald-200 enabled:active:scale-95 disabled:cursor-default disabled:text-zinc-600"
+          aria-label="Use previous set values"
+        >
+          {previousDisplay}
         </button>
 
         <div className="flex min-w-0 justify-center">
@@ -963,7 +999,7 @@ function EditableSetRow({
                   weightValue: event.target.value,
                 })
               }
-              placeholder="0"
+              placeholder={set.previous?.weight ?? "0"}
               className="h-11 w-full min-w-0 rounded-xl border border-transparent bg-transparent px-1 text-center text-xl font-semibold text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-white/[0.04]"
               aria-label={getWeightInputLabel(exercise.exerciseType)}
             />
@@ -985,7 +1021,7 @@ function EditableSetRow({
           data-form-type="other"
           value={set.repsValue}
           onChange={(event) => onUpdate({ repsValue: event.target.value })}
-          placeholder="0"
+          placeholder={set.previous?.reps?.toString() ?? "0"}
           className="h-11 w-full min-w-0 rounded-xl border border-transparent bg-transparent px-1 text-center text-xl font-semibold text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-white/[0.04]"
           aria-label="Reps"
         />
@@ -1624,6 +1660,9 @@ function toDraftWorkout(workout: CompletedWorkoutDetail): DraftWorkout {
           repsValue: set.reps.toString(),
           rpeValue: set.rpe === null ? "" : formatRpeInput(set.rpe),
           checked: set.checked,
+          originalSavedIdentity: set.original_saved_identity,
+          originalPrevious: set.previous,
+          previous: set.previous,
         }));
 
         return renumberExerciseSets({
@@ -1687,6 +1726,9 @@ function createBlankDraftSet(defaultWeightUnit: WeightUnit): DraftWorkoutSet {
     repsValue: "",
     rpeValue: "",
     checked: false,
+    originalSavedIdentity: null,
+    originalPrevious: null,
+    previous: null,
   };
 }
 
@@ -1702,12 +1744,27 @@ function renumberExerciseSets(
 ): DraftWorkoutExercise {
   let nextSetNumber = 1;
   let hasNumberedSet = false;
+  let warmupIndex = 1;
+  let activeParentIdentity: string | null = null;
+  const dropIndexByParentIdentity = new Map<string, number>();
 
   return {
     ...exercise,
     sets: exercise.sets.map((set, index) => {
+      let currentIdentity: string | null = null;
+
       if (set.setType === "warmup") {
-        return { ...set, rowIndex: index + 1, setNumber: null };
+        currentIdentity = `warmup:${warmupIndex}`;
+        warmupIndex += 1;
+
+        return withDraftPrevious(
+          {
+            ...set,
+            rowIndex: index + 1,
+            setNumber: null,
+          },
+          currentIdentity,
+        );
       }
 
       if (set.setType === "drop") {
@@ -1715,24 +1772,69 @@ function renumberExerciseSets(
           hasNumberedSet = true;
           const setNumber = nextSetNumber;
           nextSetNumber += 1;
+          activeParentIdentity = `numbered:${setNumber}`;
 
-          return {
-            ...set,
-            rowIndex: index + 1,
-            setNumber,
-            setType: "normal",
-          };
+          return withDraftPrevious(
+            {
+              ...set,
+              rowIndex: index + 1,
+              setNumber,
+              setType: "normal",
+            },
+            activeParentIdentity,
+          );
         }
 
-        return { ...set, rowIndex: index + 1, setNumber: null };
+        const parentIdentity = activeParentIdentity;
+
+        if (parentIdentity) {
+          const dropIndex =
+            (dropIndexByParentIdentity.get(parentIdentity) ?? 0) + 1;
+          dropIndexByParentIdentity.set(parentIdentity, dropIndex);
+          currentIdentity = `drop:${parentIdentity}:${dropIndex}`;
+        }
+
+        return withDraftPrevious(
+          {
+            ...set,
+            rowIndex: index + 1,
+            setNumber: null,
+          },
+          currentIdentity,
+        );
       }
 
       hasNumberedSet = true;
       const setNumber = nextSetNumber;
       nextSetNumber += 1;
+      activeParentIdentity = `numbered:${setNumber}`;
 
-      return { ...set, rowIndex: index + 1, setNumber };
+      return withDraftPrevious(
+        { ...set, rowIndex: index + 1, setNumber },
+        activeParentIdentity,
+      );
     }),
+  };
+}
+
+function withDraftPrevious(
+  set: DraftWorkoutSet,
+  currentIdentity: string | null,
+) {
+  if (
+    currentIdentity &&
+    set.originalSavedIdentity &&
+    currentIdentity === set.originalSavedIdentity
+  ) {
+    return {
+      ...set,
+      previous: set.originalPrevious,
+    };
+  }
+
+  return {
+    ...set,
+    previous: null,
   };
 }
 
@@ -1869,6 +1971,21 @@ function formatDecimal(value: string) {
   }
 
   return Number.isInteger(parsed) ? parsed.toString() : parsed.toFixed(2);
+}
+
+function formatPreviousValue(
+  previous: PreviousValue | null,
+  exerciseType: ExerciseType,
+) {
+  if (!previous?.reps) {
+    return "-";
+  }
+
+  if (!hasWeightInput(exerciseType)) {
+    return previous.reps.toString();
+  }
+
+  return `${previous.weight ?? "0.00"} x ${previous.reps}`;
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {

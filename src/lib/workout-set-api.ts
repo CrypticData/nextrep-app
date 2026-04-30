@@ -247,7 +247,11 @@ export async function updateActiveWorkoutSet(
       select: workoutSetSelect,
     });
 
-    return { kind: "ok" as const, sets };
+    return {
+      kind: "ok" as const,
+      sets,
+      workoutSessionExerciseId: existingSet.workoutSessionExerciseId,
+    };
   });
 }
 
@@ -303,7 +307,11 @@ export async function addSetToActiveWorkoutExercise(
       select: workoutSetSelect,
     });
 
-    return { kind: "ok" as const, set };
+    return {
+      kind: "ok" as const,
+      set,
+      workoutSessionExerciseId: workoutExercise.id,
+    };
   });
 }
 
@@ -394,7 +402,11 @@ export async function deleteActiveWorkoutSet(workoutSetId: string) {
       select: workoutSetSelect,
     });
 
-    return { kind: "ok" as const, sets };
+    return {
+      kind: "ok" as const,
+      sets,
+      workoutSessionExerciseId: existingSet.workoutSessionExerciseId,
+    };
   });
 }
 

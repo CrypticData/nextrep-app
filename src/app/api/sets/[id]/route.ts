@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import {
+  findActiveWorkoutExerciseResponseContext,
+  toWorkoutSessionExerciseResponseWithPrevious,
+} from "@/lib/workout-exercise-api";
+import {
   deleteActiveWorkoutSet,
   parseWorkoutSetPatchBody,
-  toWorkoutSetResponse,
   updateActiveWorkoutSet,
 } from "@/lib/workout-set-api";
 
@@ -70,7 +73,20 @@ export async function PATCH(
     return badRequest("Assisted weight cannot exceed current bodyweight.");
   }
 
-  return NextResponse.json(result.sets.map(toWorkoutSetResponse));
+  const contextResult = await findActiveWorkoutExerciseResponseContext(
+    result.workoutSessionExerciseId,
+  );
+
+  if (contextResult.kind === "workout_exercise_not_found") {
+    return notFound();
+  }
+
+  const workoutExerciseResponse = await toWorkoutSessionExerciseResponseWithPrevious(
+    contextResult.targetWorkoutExercise,
+    contextResult.workoutExercises,
+  );
+
+  return NextResponse.json(workoutExerciseResponse.sets);
 }
 
 export async function DELETE(
@@ -94,5 +110,18 @@ export async function DELETE(
     );
   }
 
-  return NextResponse.json(result.sets.map(toWorkoutSetResponse));
+  const contextResult = await findActiveWorkoutExerciseResponseContext(
+    result.workoutSessionExerciseId,
+  );
+
+  if (contextResult.kind === "workout_exercise_not_found") {
+    return notFound();
+  }
+
+  const workoutExerciseResponse = await toWorkoutSessionExerciseResponseWithPrevious(
+    contextResult.targetWorkoutExercise,
+    contextResult.workoutExercises,
+  );
+
+  return NextResponse.json(workoutExerciseResponse.sets);
 }

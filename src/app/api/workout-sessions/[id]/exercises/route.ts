@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import { isUuid } from "@/lib/exercise-api";
 import {
   addExerciseToActiveWorkoutSession,
+  findActiveWorkoutExerciseResponseContext,
   listActiveWorkoutSessionExercises,
   parseAddWorkoutExerciseBody,
-  toWorkoutSessionExerciseResponse,
+  toWorkoutSessionExerciseResponseWithPrevious,
+  toWorkoutSessionExerciseResponsesWithPrevious,
 } from "@/lib/workout-exercise-api";
 
 export const dynamic = "force-dynamic";
@@ -67,8 +69,19 @@ export async function POST(
     return notFound("Exercise not found.");
   }
 
+  const contextResult = await findActiveWorkoutExerciseResponseContext(
+    result.workoutExercise.id,
+  );
+
+  if (contextResult.kind === "workout_exercise_not_found") {
+    return notFound("Active workout session not found.");
+  }
+
   return NextResponse.json(
-    toWorkoutSessionExerciseResponse(result.workoutExercise),
+    await toWorkoutSessionExerciseResponseWithPrevious(
+      contextResult.targetWorkoutExercise,
+      contextResult.workoutExercises,
+    ),
     { status: 201 },
   );
 }
@@ -90,6 +103,6 @@ export async function GET(
   }
 
   return NextResponse.json(
-    result.workoutExercises.map(toWorkoutSessionExerciseResponse),
+    await toWorkoutSessionExerciseResponsesWithPrevious(result.workoutExercises),
   );
 }

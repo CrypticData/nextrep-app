@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import {
+  findActiveWorkoutExerciseResponseContext,
+  toWorkoutSessionExerciseResponseWithPrevious,
+} from "@/lib/workout-exercise-api";
+import {
   addSetToActiveWorkoutExercise,
-  toWorkoutSetResponse,
 } from "@/lib/workout-set-api";
 
 export const dynamic = "force-dynamic";
@@ -43,5 +46,25 @@ export async function POST(
     return notFound();
   }
 
-  return NextResponse.json(toWorkoutSetResponse(result.set), { status: 201 });
+  const contextResult = await findActiveWorkoutExerciseResponseContext(
+    result.workoutSessionExerciseId,
+  );
+
+  if (contextResult.kind === "workout_exercise_not_found") {
+    return notFound();
+  }
+
+  const workoutExerciseResponse = await toWorkoutSessionExerciseResponseWithPrevious(
+    contextResult.targetWorkoutExercise,
+    contextResult.workoutExercises,
+  );
+  const createdSet = workoutExerciseResponse.sets.find(
+    (set) => set.id === result.set.id,
+  );
+
+  if (!createdSet) {
+    return notFound();
+  }
+
+  return NextResponse.json(createdSet, { status: 201 });
 }
