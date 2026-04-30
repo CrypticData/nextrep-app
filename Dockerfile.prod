@@ -1,0 +1,49 @@
+# syntax=docker/dockerfile:1.7
+# Production multi-stage build. Outputs a slim runtime image that runs
+# `prisma migrate deploy` then starts the Next.js standalone server.
+
+FROM node:24-alpine AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+
+FROM node:24-alpine AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json package-lock.json tsconfig.json ./
+COPY next.config.ts postcss.config.mjs eslint.config.mjs ./
+COPY prisma.config.ts ./
+COPY prisma ./prisma
+COPY src ./src
+COPY public ./public
+RUN npx prisma generate
+RUN npm run build
+
+FROM node:24-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+# Next.js standalone server bundle (includes its own minimal node_modules).
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
+
+# Prisma migration assets. The standalone bundle ships only files traced at
+# build time — the Prisma CLI is not traced because it is invoked as a binary
+# rather than imported. Replace the minimal standalone node_modules with the
+# full builder copy so `prisma migrate deploy` resolves all its transitive
+# dependencies (effect, @prisma/config, etc.) at boot.
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
+COPY --from=builder /app/node_modules ./node_modules
+
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
+ && chown -R node:node /app
+
+USER node
+EXPOSE 3000
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["node", "server.js"]

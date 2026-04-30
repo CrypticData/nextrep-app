@@ -2,6 +2,8 @@
 
 NextRep is a single-user, self-hosted app. Backups are local files made from the PostgreSQL container with `pg_dump`. Keep backup files outside git-tracked paths; this repo ignores `backups/` for convenience.
 
+These commands work the same against the dev `docker-compose.yml` and the prod `docker-compose.prod.yml` — the service name `db` is unchanged. Add `-f docker-compose.prod.yml` to the commands below if you are running the production stack.
+
 These commands assume the default Compose service name `db` and the default database settings from `.env.example`:
 
 ```txt
