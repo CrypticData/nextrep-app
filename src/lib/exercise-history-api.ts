@@ -60,6 +60,21 @@ type ExerciseHistoryWorkoutExercise =
   ExerciseHistorySession["exercises"][number];
 type ExerciseHistorySet = ExerciseHistoryWorkoutExercise["sets"][number];
 
+type ExerciseHistorySetDto = {
+  id: string;
+  row_index: number;
+  set_number: number | null;
+  set_type: "normal" | "warmup" | "failure" | "drop";
+  weight: number | null;
+  weight_unit: WeightUnit | null;
+  bodyweight: number | null;
+  bodyweight_unit: WeightUnit | null;
+  reps: number;
+  rpe: number | null;
+  checked: boolean;
+  checked_at: string | null;
+};
+
 export type ExerciseHistoryResponse = {
   exercise_id: string;
   exercise_type: ExerciseType;
@@ -72,20 +87,11 @@ export type ExerciseHistoryResponse = {
     duration_seconds: number;
     workout_url: string;
     set_count: number;
-    sets: {
-      id: string;
+    blocks: {
       workout_session_exercise_id: string;
-      row_index: number;
-      set_number: number | null;
-      set_type: "normal" | "warmup" | "failure" | "drop";
-      weight: number | null;
-      weight_unit: WeightUnit | null;
-      bodyweight: number | null;
-      bodyweight_unit: WeightUnit | null;
-      reps: number;
-      rpe: number | null;
-      checked: boolean;
-      checked_at: string | null;
+      order_index: number;
+      set_count: number;
+      sets: ExerciseHistorySetDto[];
     }[];
   }[];
 };
@@ -178,11 +184,18 @@ function toHistoryWorkout(
   displayWeightUnit: WeightUnit,
 ): ExerciseHistoryResponse["workouts"][number] {
   const endedAt = requireEndedAt(session);
-  const sets = session.exercises.flatMap((exercise) =>
-    exercise.sets.map((set) =>
-      toHistorySet(set, exercise.id, exerciseType, displayWeightUnit),
-    ),
-  );
+  const blocks = session.exercises.map((exercise) => {
+    const sets = exercise.sets.map((set) =>
+      toHistorySet(set, exerciseType, displayWeightUnit),
+    );
+
+    return {
+      workout_session_exercise_id: exercise.id,
+      order_index: exercise.orderIndex,
+      set_count: sets.length,
+      sets,
+    };
+  });
 
   return {
     id: session.id,
@@ -191,20 +204,18 @@ function toHistoryWorkout(
     ended_at: endedAt.toISOString(),
     duration_seconds: getDurationSeconds(session.startedAt, endedAt),
     workout_url: `/profile/workouts/${session.id}`,
-    set_count: sets.length,
-    sets,
+    set_count: blocks.reduce((count, block) => count + block.set_count, 0),
+    blocks,
   };
 }
 
 function toHistorySet(
   set: ExerciseHistorySet,
-  workoutSessionExerciseId: string,
   exerciseType: ExerciseType,
   displayWeightUnit: WeightUnit,
-): ExerciseHistoryResponse["workouts"][number]["sets"][number] {
+): ExerciseHistorySetDto {
   return {
     id: set.id,
-    workout_session_exercise_id: workoutSessionExerciseId,
     row_index: set.rowIndex,
     set_number: set.setNumber,
     set_type: set.setType,

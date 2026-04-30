@@ -61,12 +61,18 @@ type ExerciseHistoryWorkout = {
   duration_seconds: number;
   workout_url: string;
   set_count: number;
+  blocks: ExerciseHistoryBlock[];
+};
+
+type ExerciseHistoryBlock = {
+  workout_session_exercise_id: string;
+  order_index: number;
+  set_count: number;
   sets: ExerciseHistorySet[];
 };
 
 type ExerciseHistorySet = {
   id: string;
-  workout_session_exercise_id: string;
   row_index: number;
   set_number: number | null;
   set_type: SetType;
@@ -1236,30 +1242,38 @@ function ExerciseHistoryWorkoutCard({
       </Link>
 
       <div className="mt-4">
-        <div className="mb-2.5 flex items-center gap-3">
-          <ExerciseThumb name={exercise.primary_muscle_group.name} size="sm" />
-          <div className="min-w-0 flex-1">
-            <h4 className="truncate text-[15px] font-bold text-white">
-              {exercise.name}
-            </h4>
-            <p className="mt-0.5 truncate text-xs text-zinc-500">
-              {exercise.equipment_type.name}
-            </p>
-          </div>
-        </div>
-
-        <div className="overflow-hidden rounded-[14px] border border-white/[0.08] bg-[#1a1a1a]">
-          <div className="flex items-center border-b border-white/[0.06] px-3.5 py-2 text-[11px] font-bold uppercase tracking-[0.07em] text-zinc-600">
-            <div className="w-8 shrink-0">Set</div>
-            <div className="min-w-0 flex-1">Weight &amp; Reps</div>
-          </div>
-          {workout.sets.map((set) => (
-            <ExerciseHistorySetRow
-              exerciseType={exerciseType}
-              isLast={set.id === workout.sets[workout.sets.length - 1]?.id}
-              key={set.id}
-              set={set}
-            />
+        <div className="space-y-4">
+          {workout.blocks.map((block) => (
+            <div key={block.workout_session_exercise_id}>
+              <div className="mb-2.5 flex items-center gap-3">
+                <ExerciseThumb
+                  name={exercise.primary_muscle_group.name}
+                  size="sm"
+                />
+                <div className="min-w-0 flex-1">
+                  <h4 className="truncate text-[15px] font-bold text-white">
+                    {exercise.name}
+                  </h4>
+                  <p className="mt-0.5 truncate text-xs text-zinc-500">
+                    {exercise.equipment_type.name}
+                  </p>
+                </div>
+              </div>
+              <div className="overflow-hidden rounded-[14px] border border-white/[0.08] bg-[#1a1a1a]">
+                <div className="flex items-center border-b border-white/[0.06] px-3.5 py-2 text-[11px] font-bold uppercase tracking-[0.07em] text-zinc-600">
+                  <div className="w-8 shrink-0">Set</div>
+                  <div className="min-w-0 flex-1">Weight &amp; Reps</div>
+                </div>
+                {block.sets.map((set) => (
+                  <ExerciseHistorySetRow
+                    exerciseType={exerciseType}
+                    isLast={set.id === block.sets[block.sets.length - 1]?.id}
+                    key={set.id}
+                    set={set}
+                  />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </div>
