@@ -84,6 +84,10 @@ type WorkoutSessionExercise = {
   id: string;
 };
 
+type RecentExercisesResponse = {
+  exercise_ids: string[];
+};
+
 type ModalMode =
   | { kind: "create" }
   | {
@@ -94,8 +98,10 @@ type ModalMode =
 type ExerciseLibraryMode = "manage" | "add-to-workout";
 
 export function ExerciseLibraryApp({
+  initialSelectedExerciseId = null,
   mode = "manage",
 }: {
+  initialSelectedExerciseId?: string | null;
   mode?: ExerciseLibraryMode;
 }) {
   const router = useRouter();
@@ -107,6 +113,7 @@ export function ExerciseLibraryApp({
   } = useActiveWorkout();
   const isAddToWorkoutMode = mode === "add-to-workout";
   const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [recentExerciseIds, setRecentExerciseIds] = useState<string[]>([]);
   const [equipmentTypes, setEquipmentTypes] = useState<Reference[]>([]);
   const [muscleGroups, setMuscleGroups] = useState<Reference[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -116,7 +123,7 @@ export function ExerciseLibraryApp({
   const [equipmentFilterId, setEquipmentFilterId] = useState("");
   const [muscleFilterId, setMuscleFilterId] = useState("");
   const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(
-    null,
+    isAddToWorkoutMode ? null : initialSelectedExerciseId,
   );
   const [modalMode, setModalMode] = useState<ModalMode | null>(null);
   const [deletingExerciseId, setDeletingExerciseId] = useState<string | null>(
@@ -125,6 +132,9 @@ export function ExerciseLibraryApp({
   const [deleteExerciseTarget, setDeleteExerciseTarget] =
     useState<Exercise | null>(null);
   const [isExerciseActionsOpen, setIsExerciseActionsOpen] = useState(false);
+  const [openExerciseFilterSheet, setOpenExerciseFilterSheet] = useState<
+    "equipment" | "muscle" | null
+  >(null);
   const [addingExerciseId, setAddingExerciseId] = useState<string | null>(null);
 
   const loadLibrary = useCallback(async () => {
@@ -132,13 +142,16 @@ export function ExerciseLibraryApp({
     setLoadError(null);
 
     try {
-      const [exerciseData, equipmentData, muscleData] = await Promise.all([
-        fetchJson<Exercise[]>("/api/exercises"),
-        fetchJson<Reference[]>("/api/equipment-types"),
-        fetchJson<Reference[]>("/api/muscle-groups"),
-      ]);
+      const [exerciseData, recentData, equipmentData, muscleData] =
+        await Promise.all([
+          fetchJson<Exercise[]>("/api/exercises"),
+          fetchJson<RecentExercisesResponse>("/api/exercises/recent"),
+          fetchJson<Reference[]>("/api/equipment-types"),
+          fetchJson<Reference[]>("/api/muscle-groups"),
+        ]);
 
       setExercises(sortExercises(exerciseData));
+      setRecentExerciseIds(recentData.exercise_ids);
       setEquipmentTypes(equipmentData);
       setMuscleGroups(muscleData);
     } catch (error) {
@@ -166,26 +179,42 @@ export function ExerciseLibraryApp({
     );
   }, [exercises, isAddToWorkoutMode, selectedExerciseId]);
 
-  const filteredExercises = useMemo(() => {
-    const normalizedSearch = search.trim().toLowerCase();
+  const filteredExercises = useMemo(
+    () =>
+      exercises.filter((exercise) =>
+        matchesExerciseFilters({
+          equipmentFilterId,
+          exercise,
+          muscleFilterId,
+          search,
+        }),
+      ),
+    [equipmentFilterId, exercises, muscleFilterId, search],
+  );
 
-    return exercises.filter((exercise) => {
-      const matchesSearch =
-        normalizedSearch.length === 0 ||
-        exercise.name.toLowerCase().includes(normalizedSearch);
-      const matchesEquipment =
-        equipmentFilterId.length === 0 ||
-        exercise.equipment_type.id === equipmentFilterId;
-      const matchesMuscle =
-        muscleFilterId.length === 0 ||
-        exercise.primary_muscle_group.id === muscleFilterId ||
-        exercise.secondary_muscle_groups.some(
-          (muscleGroup) => muscleGroup.id === muscleFilterId,
-        );
+  const recentExercises = useMemo(() => {
+    const exerciseById = new Map(
+      exercises.map((exercise) => [exercise.id, exercise]),
+    );
 
-      return matchesSearch && matchesEquipment && matchesMuscle;
+    return recentExerciseIds.flatMap((exerciseId) => {
+      const exercise = exerciseById.get(exerciseId);
+
+      if (
+        !exercise ||
+        !matchesExerciseFilters({
+          equipmentFilterId,
+          exercise,
+          muscleFilterId,
+          search,
+        })
+      ) {
+        return [];
+      }
+
+      return [exercise];
     });
-  }, [equipmentFilterId, exercises, muscleFilterId, search]);
+  }, [equipmentFilterId, exercises, muscleFilterId, recentExerciseIds, search]);
 
   async function addExerciseToActiveWorkout(exercise: Exercise) {
     if (!session) {
@@ -249,6 +278,9 @@ export function ExerciseLibraryApp({
       return sortExercises(nextExercises);
     });
     setSelectedExerciseId(isAddToWorkoutMode ? null : exercise.id);
+    if (!isAddToWorkoutMode) {
+      router.replace(getExerciseDetailHref(exercise.id), { scroll: false });
+    }
     setModalMode(null);
     setActionError(null);
     toast.success(editingExercise ? "Exercise saved" : "Exercise created");
@@ -266,11 +298,13 @@ export function ExerciseLibraryApp({
 
     setIsExerciseActionsOpen(false);
     setSelectedExerciseId(exercise.id);
+    router.replace(getExerciseDetailHref(exercise.id), { scroll: false });
   }
 
   function closeExerciseDetail() {
     setIsExerciseActionsOpen(false);
     setSelectedExerciseId(null);
+    router.replace("/profile/exercises", { scroll: false });
   }
 
   function cancelAddToWorkout() {
@@ -297,6 +331,7 @@ export function ExerciseLibraryApp({
         ),
       );
       setSelectedExerciseId(null);
+      router.replace("/profile/exercises", { scroll: false });
       setDeleteExerciseTarget(null);
       toast.success("Exercise deleted");
     } catch (error) {
@@ -383,14 +418,48 @@ export function ExerciseLibraryApp({
             onCreate={() => setModalMode({ kind: "create" })}
             onRetry={() => void loadLibrary()}
             onSearchChange={setSearch}
+            onClearFilters={() => {
+              setEquipmentFilterId("");
+              setMuscleFilterId("");
+            }}
+            onOpenFilterSheet={setOpenExerciseFilterSheet}
             onSelectExercise={handleSelectExercise}
-            onSetEquipmentFilter={setEquipmentFilterId}
-            onSetMuscleFilter={setMuscleFilterId}
+            recentExercises={recentExercises}
             search={search}
             totalExerciseCount={exercises.length}
           />
         )}
       </AppShell>
+
+      {openExerciseFilterSheet === "equipment" ? (
+        <ExerciseFilterSheet
+          allLabel="All Equipment"
+          currentValue={equipmentFilterId}
+          fieldLabel="Equipment"
+          onClose={() => setOpenExerciseFilterSheet(null)}
+          onSelect={(value) => {
+            setEquipmentFilterId(value);
+            setOpenExerciseFilterSheet(null);
+          }}
+          options={equipmentTypes}
+          title="Filter Equipment"
+        />
+      ) : null}
+
+      {openExerciseFilterSheet === "muscle" ? (
+        <ExerciseFilterSheet
+          allLabel="All Muscles"
+          currentValue={muscleFilterId}
+          fieldLabel="Muscle"
+          onClose={() => setOpenExerciseFilterSheet(null)}
+          onSelect={(value) => {
+            setMuscleFilterId(value);
+            setOpenExerciseFilterSheet(null);
+          }}
+          options={muscleGroups}
+          title="Filter Muscle"
+        />
+      ) : null}
 
       {modalMode ? (
         <ExerciseModal
@@ -479,9 +548,10 @@ function ExerciseList({
   onCreate,
   onRetry,
   onSearchChange,
+  onClearFilters,
+  onOpenFilterSheet,
   onSelectExercise,
-  onSetEquipmentFilter,
-  onSetMuscleFilter,
+  recentExercises,
   search,
   totalExerciseCount,
 }: {
@@ -498,9 +568,10 @@ function ExerciseList({
   onCreate: () => void;
   onRetry: () => void;
   onSearchChange: (value: string) => void;
+  onClearFilters: () => void;
+  onOpenFilterSheet: (sheet: "equipment" | "muscle") => void;
   onSelectExercise: (exercise: Exercise) => void;
-  onSetEquipmentFilter: (value: string) => void;
-  onSetMuscleFilter: (value: string) => void;
+  recentExercises: Exercise[];
   search: string;
   totalExerciseCount: number;
 }) {
@@ -532,14 +603,12 @@ function ExerciseList({
       <ExerciseListControls
         equipmentFilterId={equipmentFilterId}
         equipmentTypes={equipmentTypes}
-        exercisesShownCount={exercises.length}
         muscleFilterId={muscleFilterId}
         muscleGroups={muscleGroups}
+        onClearFilters={onClearFilters}
+        onOpenFilterSheet={onOpenFilterSheet}
         onSearchChange={onSearchChange}
-        onSetEquipmentFilter={onSetEquipmentFilter}
-        onSetMuscleFilter={onSetMuscleFilter}
         search={search}
-        totalExerciseCount={totalExerciseCount}
       />
       {actionError ? <ActionError message={actionError} /> : null}
       <ExerciseResults
@@ -549,6 +618,7 @@ function ExerciseList({
         isSelectionMode={mode === "add-to-workout"}
         onCreate={onCreate}
         onSelectExercise={onSelectExercise}
+        recentExercises={recentExercises}
         totalExerciseCount={totalExerciseCount}
       />
     </div>
@@ -566,73 +636,87 @@ function ActionError({ message }: { message: string }) {
 function ExerciseListControls({
   equipmentFilterId,
   equipmentTypes,
-  exercisesShownCount,
   muscleFilterId,
   muscleGroups,
+  onClearFilters,
+  onOpenFilterSheet,
   onSearchChange,
-  onSetEquipmentFilter,
-  onSetMuscleFilter,
   search,
-  totalExerciseCount,
 }: {
   equipmentFilterId: string;
   equipmentTypes: Reference[];
-  exercisesShownCount: number;
   muscleFilterId: string;
   muscleGroups: Reference[];
+  onClearFilters: () => void;
+  onOpenFilterSheet: (sheet: "equipment" | "muscle") => void;
   onSearchChange: (value: string) => void;
-  onSetEquipmentFilter: (value: string) => void;
-  onSetMuscleFilter: (value: string) => void;
   search: string;
-  totalExerciseCount: number;
 }) {
+  const selectedEquipmentName =
+    equipmentTypes.find((option) => option.id === equipmentFilterId)?.name ??
+    null;
+  const selectedMuscleName =
+    muscleGroups.find((option) => option.id === muscleFilterId)?.name ?? null;
+  const hasActiveFilter =
+    equipmentFilterId.length > 0 || muscleFilterId.length > 0;
+
   return (
-    <div className="sticky top-0 z-20 -mx-5 space-y-4 bg-[#101010]/95 px-5 pb-4 pt-3 backdrop-blur">
-      <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#1b1b1b] px-3 py-2.5">
-        <SearchIcon className="h-4 w-4 shrink-0 text-zinc-500" />
-        <input
-          value={search}
-          onChange={(event) => onSearchChange(event.target.value)}
-          inputMode="search"
-          autoComplete="off"
-          autoCorrect="off"
-          autoCapitalize="none"
-          placeholder="Search exercise"
-          className="min-w-0 flex-1 bg-transparent text-base text-white outline-none placeholder:text-zinc-600"
-        />
-        {search.length > 0 ? (
-          <button
-            type="button"
-            onClick={() => onSearchChange("")}
-            className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-500 transition hover:bg-white/5 hover:text-zinc-300"
-            aria-label="Clear search"
-          >
-            <XIcon className="h-4 w-4" />
-          </button>
-        ) : null}
-      </div>
+    <>
+      <div className="sticky top-0 z-20 -mx-5 space-y-4 bg-[#101010]/95 px-5 pb-4 pt-3 backdrop-blur">
+        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#1b1b1b] px-3 py-2.5">
+          <SearchIcon className="h-4 w-4 shrink-0 text-zinc-500" />
+          <input
+            value={search}
+            onChange={(event) => onSearchChange(event.target.value)}
+            inputMode="search"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="none"
+            placeholder="Search exercise"
+            className="min-w-0 flex-1 bg-transparent text-base text-white outline-none placeholder:text-zinc-600"
+          />
+          {search.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => onSearchChange("")}
+              className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-500 transition hover:bg-white/5 hover:text-zinc-300"
+              aria-label="Clear search"
+            >
+              <XIcon className="h-4 w-4" />
+            </button>
+          ) : null}
+        </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        <FilterSelect
-          label="Equipment"
-          onChange={onSetEquipmentFilter}
-          options={equipmentTypes}
-          value={equipmentFilterId}
-        />
-        <FilterSelect
-          label="Muscle"
-          onChange={onSetMuscleFilter}
-          options={muscleGroups}
-          value={muscleFilterId}
-        />
+        <div
+          className={
+            hasActiveFilter
+              ? "grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_44px] gap-2"
+              : "grid grid-cols-2 gap-2"
+          }
+        >
+          <FilterControl
+            isActive={equipmentFilterId.length > 0}
+            label={selectedEquipmentName ?? "All Equipment"}
+            onOpen={() => onOpenFilterSheet("equipment")}
+          />
+          <FilterControl
+            isActive={muscleFilterId.length > 0}
+            label={selectedMuscleName ?? "All Muscles"}
+            onOpen={() => onOpenFilterSheet("muscle")}
+          />
+          {hasActiveFilter ? (
+            <button
+              type="button"
+              onClick={onClearFilters}
+              className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-[#222] text-zinc-400 transition active:scale-[0.98]"
+              aria-label="Clear equipment and muscle filters"
+            >
+              <XIcon className="h-4 w-4" />
+            </button>
+          ) : null}
+        </div>
       </div>
-
-      <p className="pt-1 text-sm font-medium text-zinc-500">
-        {totalExerciseCount === 0
-          ? "All Exercises"
-          : `${exercisesShownCount} shown`}
-      </p>
-    </div>
+    </>
   );
 }
 
@@ -643,6 +727,7 @@ function ExerciseResults({
   isSelectionMode,
   onCreate,
   onSelectExercise,
+  recentExercises,
   totalExerciseCount,
 }: {
   addingExerciseId: string | null;
@@ -651,6 +736,7 @@ function ExerciseResults({
   isSelectionMode: boolean;
   onCreate: () => void;
   onSelectExercise: (exercise: Exercise) => void;
+  recentExercises: Exercise[];
   totalExerciseCount: number;
 }) {
   return (
@@ -683,50 +769,158 @@ function ExerciseResults({
       ) : null}
 
       {!isLoading && exercises.length > 0 ? (
-        <div className="space-y-2">
-          {exercises.map((exercise) => (
-            <ExerciseRow
-              exercise={exercise}
-              isAdding={addingExerciseId === exercise.id}
-              isDisabled={addingExerciseId !== null}
+        <div className="space-y-6">
+          {recentExercises.length > 0 ? (
+            <ExerciseResultSection
+              addingExerciseId={addingExerciseId}
+              exercises={recentExercises}
               isSelectionMode={isSelectionMode}
-              key={exercise.id}
-              onClick={() => onSelectExercise(exercise)}
+              onSelectExercise={onSelectExercise}
+              title="Recent Exercises"
             />
-          ))}
+          ) : null}
+          <ExerciseResultSection
+            addingExerciseId={addingExerciseId}
+            exercises={exercises}
+            isSelectionMode={isSelectionMode}
+            onSelectExercise={onSelectExercise}
+            title="All Exercises"
+          />
         </div>
       ) : null}
     </div>
   );
 }
 
-function FilterSelect({
-  label,
-  onChange,
-  options,
-  value,
+function ExerciseResultSection({
+  addingExerciseId,
+  exercises,
+  isSelectionMode,
+  onSelectExercise,
+  title,
 }: {
-  label: string;
-  onChange: (value: string) => void;
-  options: Reference[];
-  value: string;
+  addingExerciseId: string | null;
+  exercises: Exercise[];
+  isSelectionMode: boolean;
+  onSelectExercise: (exercise: Exercise) => void;
+  title: string;
 }) {
   return (
-    <label className="block">
-      <span className="sr-only">{label}</span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-11 w-full rounded-full border border-white/10 bg-[#222] px-3 text-sm font-semibold text-white outline-none transition focus:border-emerald-400/70"
-      >
-        <option value="">All {label}</option>
-        {options.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.name}
-          </option>
+    <section>
+      <h2 className="mb-2.5 px-1 text-[11px] font-bold uppercase tracking-[0.09em] text-zinc-500">
+        {title}
+      </h2>
+      <div className="space-y-2">
+        {exercises.map((exercise) => (
+          <ExerciseRow
+            exercise={exercise}
+            isAdding={addingExerciseId === exercise.id}
+            isDisabled={addingExerciseId !== null}
+            isSelectionMode={isSelectionMode}
+            key={exercise.id}
+            onClick={() => onSelectExercise(exercise)}
+          />
         ))}
-      </select>
-    </label>
+      </div>
+    </section>
+  );
+}
+
+function FilterControl({
+  isActive,
+  label,
+  onOpen,
+}: {
+  isActive: boolean;
+  label: string;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={
+        isActive
+          ? "flex h-11 min-w-0 items-center justify-center rounded-full border border-emerald-400/35 bg-emerald-400/10 px-3 text-center text-sm font-semibold text-emerald-100 transition active:scale-[0.98]"
+          : "flex h-11 min-w-0 items-center justify-center rounded-full border border-white/10 bg-[#222] px-3 text-center text-sm font-semibold text-zinc-200 transition active:scale-[0.98]"
+      }
+    >
+      <span className="min-w-0 truncate">{label}</span>
+    </button>
+  );
+}
+
+function ExerciseFilterSheet({
+  allLabel,
+  currentValue,
+  fieldLabel,
+  onClose,
+  onSelect,
+  options,
+  title,
+}: {
+  allLabel: string;
+  currentValue: string;
+  fieldLabel: string;
+  onClose: () => void;
+  onSelect: (value: string) => void;
+  options: Reference[];
+  title: string;
+}) {
+  const sheetOptions = [{ id: "", name: allLabel }, ...options];
+
+  return (
+    <div className="safe-sheet fixed inset-0 z-50 flex items-end justify-center bg-black/70">
+      <button
+        type="button"
+        aria-label="Close filter menu"
+        className="absolute inset-0 cursor-default"
+        onClick={onClose}
+      />
+      <section className="safe-sheet-panel relative flex max-h-[90dvh] w-full max-w-md flex-col rounded-t-[28px] border border-white/10 bg-[#141414] shadow-2xl shadow-black">
+        <div className="flex justify-center px-5 py-3">
+          <div className="h-1 w-10 rounded-full bg-white/20" />
+        </div>
+        <div className="border-b border-white/10 px-5 pb-4">
+          <h2 className="truncate text-center text-base font-semibold text-white">
+            {title}
+          </h2>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-5">
+          <div>
+            <p className="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-zinc-500">
+              {fieldLabel}
+            </p>
+            <div className="space-y-3">
+              {sheetOptions.map((option) => {
+                const isSelected = option.id === currentValue;
+
+                return (
+                  <button
+                    type="button"
+                    onClick={() => onSelect(option.id)}
+                    key={option.id || "all"}
+                    className={
+                      isSelected
+                        ? "grid min-h-14 w-full grid-cols-[1fr_28px] items-center rounded-2xl border border-emerald-400/40 bg-emerald-400/10 px-4 text-left transition active:scale-[0.99]"
+                        : "grid min-h-14 w-full grid-cols-[1fr_28px] items-center rounded-2xl border border-white/10 bg-[#232323] px-4 text-left transition active:scale-[0.99]"
+                    }
+                  >
+                    <span className="min-w-0 truncate text-base font-semibold text-white">
+                      {option.name}
+                    </span>
+                    {isSelected ? (
+                      <CheckIcon className="h-5 w-5 text-emerald-300" />
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -914,6 +1108,7 @@ function ExerciseDetail({
       </div>
 
       <ExerciseHistoryPanel
+        exercise={exercise}
         exerciseType={exercise.exercise_type}
         history={history}
         isLoading={isHistoryLoading}
@@ -928,12 +1123,14 @@ function ExerciseDetail({
 }
 
 function ExerciseHistoryPanel({
+  exercise,
   exerciseType,
   history,
   isLoading,
   loadError,
   onRetry,
 }: {
+  exercise: Exercise;
   exerciseType: ExerciseType;
   history: ExerciseHistory | null;
   isLoading: boolean;
@@ -985,6 +1182,7 @@ function ExerciseHistoryPanel({
     <div className="mt-4 space-y-3 pb-24">
       {history.workouts.map((workout) => (
         <ExerciseHistoryWorkoutCard
+          exercise={exercise}
           exerciseType={exerciseType}
           key={workout.id}
           workout={workout}
@@ -995,16 +1193,23 @@ function ExerciseHistoryPanel({
 }
 
 function ExerciseHistoryWorkoutCard({
+  exercise,
   exerciseType,
   workout,
 }: {
+  exercise: Exercise;
   exerciseType: ExerciseType;
   workout: ExerciseHistoryWorkout;
 }) {
+  const returnHref = getExerciseDetailHref(exercise.id);
+  const workoutHref = `${workout.workout_url}?returnTo=${encodeURIComponent(
+    returnHref,
+  )}`;
+
   return (
     <article className="rounded-2xl border border-white/[0.08] bg-[#181818] p-4">
       <Link
-        href={workout.workout_url}
+        href={workoutHref}
         className="flex items-start justify-between gap-3 transition active:scale-[0.99]"
       >
         <div className="min-w-0">
@@ -1024,14 +1229,33 @@ function ExerciseHistoryWorkoutCard({
         </div>
       </Link>
 
-      <div className="mt-4 space-y-2">
-        {workout.sets.map((set) => (
-          <ExerciseHistorySetRow
-            exerciseType={exerciseType}
-            key={set.id}
-            set={set}
-          />
-        ))}
+      <div className="mt-4">
+        <div className="mb-2.5 flex items-center gap-3">
+          <ExerciseThumb name={exercise.primary_muscle_group.name} size="sm" />
+          <div className="min-w-0 flex-1">
+            <h4 className="truncate text-[15px] font-bold text-white">
+              {exercise.name}
+            </h4>
+            <p className="mt-0.5 truncate text-xs text-zinc-500">
+              {exercise.equipment_type.name}
+            </p>
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-[14px] border border-white/[0.08] bg-[#1a1a1a]">
+          <div className="flex items-center border-b border-white/[0.06] px-3.5 py-2 text-[11px] font-bold uppercase tracking-[0.07em] text-zinc-600">
+            <div className="w-8 shrink-0">Set</div>
+            <div className="min-w-0 flex-1">Weight &amp; Reps</div>
+          </div>
+          {workout.sets.map((set) => (
+            <ExerciseHistorySetRow
+              exerciseType={exerciseType}
+              isLast={set.id === workout.sets[workout.sets.length - 1]?.id}
+              key={set.id}
+              set={set}
+            />
+          ))}
+        </div>
       </div>
     </article>
   );
@@ -1039,49 +1263,27 @@ function ExerciseHistoryWorkoutCard({
 
 function ExerciseHistorySetRow({
   exerciseType,
+  isLast,
   set,
 }: {
   exerciseType: ExerciseType;
+  isLast: boolean;
   set: ExerciseHistorySet;
 }) {
   return (
-    <div className="grid min-h-14 grid-cols-[44px_1fr_58px_52px] items-center gap-2 rounded-xl bg-white/[0.035] px-3 py-2">
-      <div>
-        <p className={`text-sm font-bold ${getSetLabelClassName(set.set_type)}`}>
-          {formatSetLabel(set)}
-        </p>
-        {set.set_type === "normal" ? null : (
-          <p className="mt-0.5 text-[10px] font-semibold uppercase text-zinc-500">
-            {formatSetType(set.set_type)}
-          </p>
-        )}
+    <div
+      className={`flex items-center px-3.5 py-2.5 ${
+        isLast ? "" : "border-b border-white/[0.06]"
+      }`}
+    >
+      <div
+        className={`w-8 shrink-0 text-sm font-bold ${getSetLabelClassName(set.set_type)}`}
+      >
+        {formatSetLabel(set)}
       </div>
-      <div className="min-w-0">
-        <p className="truncate text-sm font-semibold text-zinc-100">
-          {formatHistoryLoad(set, exerciseType)}
-        </p>
-        {set.bodyweight !== null && set.bodyweight_unit ? (
-          <p className="mt-0.5 text-xs font-medium text-zinc-500">
-            BW {formatDecimal(set.bodyweight)} {set.bodyweight_unit}
-          </p>
-        ) : (
-          <p className="mt-0.5 text-xs font-medium text-zinc-500">
-            row {set.row_index}
-          </p>
-        )}
-      </div>
-      <div className="text-right">
-        <p className="text-sm font-semibold text-white">{set.reps}</p>
-        <p className="mt-0.5 text-[10px] font-semibold uppercase text-zinc-500">
-          reps
-        </p>
-      </div>
-      <div className="text-right">
-        <p className="text-sm font-semibold text-zinc-200">
-          {set.rpe === null ? "-" : formatDecimal(set.rpe)}
-        </p>
-        <p className="mt-0.5 text-[10px] font-semibold uppercase text-zinc-500">
-          RPE
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[15px] font-semibold text-zinc-50">
+          {formatHistorySetSummary(set, exerciseType)}
         </p>
       </div>
     </div>
@@ -1566,20 +1768,21 @@ function formatHistoryLoad(
   return "No weight";
 }
 
-function formatSetType(setType: SetType) {
-  if (setType === "warmup") {
-    return "Warmup";
+function formatHistorySetSummary(
+  set: ExerciseHistorySet,
+  exerciseType: ExerciseType,
+) {
+  const baseSummary = `${formatHistoryLoad(set, exerciseType)} × ${set.reps}`;
+
+  if (set.rpe === null) {
+    return baseSummary;
   }
 
-  if (setType === "failure") {
-    return "Failure";
-  }
+  return `${baseSummary} @ ${formatDecimal(set.rpe)} RPE`;
+}
 
-  if (setType === "drop") {
-    return "Drop";
-  }
-
-  return "Set";
+function getExerciseDetailHref(exerciseId: string) {
+  return `/profile/exercises?exercise=${encodeURIComponent(exerciseId)}`;
 }
 
 function formatHistoryDate(value: string) {
@@ -1628,9 +1831,55 @@ function formatSetCount(count: number) {
 }
 
 function sortExercises(exercises: Exercise[]) {
-  return [...exercises].sort((first, second) =>
-    first.name.localeCompare(second.name, undefined, { sensitivity: "base" }),
-  );
+  return [...exercises].sort(compareExercisesByName);
+}
+
+function compareExercisesByName(first: Exercise, second: Exercise) {
+  const firstName = first.name.trimStart();
+  const secondName = second.name.trimStart();
+  const firstStartsWithNumber = startsWithNumber(firstName);
+  const secondStartsWithNumber = startsWithNumber(secondName);
+
+  if (firstStartsWithNumber !== secondStartsWithNumber) {
+    return firstStartsWithNumber ? -1 : 1;
+  }
+
+  return firstName.localeCompare(secondName, undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+function startsWithNumber(value: string) {
+  return /^[0-9]/.test(value);
+}
+
+function matchesExerciseFilters({
+  equipmentFilterId,
+  exercise,
+  muscleFilterId,
+  search,
+}: {
+  equipmentFilterId: string;
+  exercise: Exercise;
+  muscleFilterId: string;
+  search: string;
+}) {
+  const normalizedSearch = search.trim().toLowerCase();
+  const matchesSearch =
+    normalizedSearch.length === 0 ||
+    exercise.name.toLowerCase().includes(normalizedSearch);
+  const matchesEquipment =
+    equipmentFilterId.length === 0 ||
+    exercise.equipment_type.id === equipmentFilterId;
+  const matchesMuscle =
+    muscleFilterId.length === 0 ||
+    exercise.primary_muscle_group.id === muscleFilterId ||
+    exercise.secondary_muscle_groups.some(
+      (muscleGroup) => muscleGroup.id === muscleFilterId,
+    );
+
+  return matchesSearch && matchesEquipment && matchesMuscle;
 }
 
 type IconProps = {

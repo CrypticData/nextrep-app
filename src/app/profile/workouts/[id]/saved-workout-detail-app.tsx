@@ -54,7 +54,13 @@ type CompletedWorkoutSet = {
 
 type LoadState = "loading" | "ready" | "error";
 
-export function SavedWorkoutDetailApp({ workoutId }: { workoutId: string }) {
+export function SavedWorkoutDetailApp({
+  backHref = "/profile",
+  workoutId,
+}: {
+  backHref?: string;
+  workoutId: string;
+}) {
   const router = useRouter();
   const toast = useToast();
   const [loadState, setLoadState] = useState<LoadState>("loading");
@@ -161,7 +167,7 @@ export function SavedWorkoutDetailApp({ workoutId }: { workoutId: string }) {
           <EditIcon className="h-5 w-5" />
         </button>
       }
-      backHref="/profile"
+      backHref={backHref}
       mainClassName="safe-main-x pb-8 pt-4"
       subpage
       title="Workout Details"

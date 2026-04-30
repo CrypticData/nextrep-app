@@ -1,6 +1,7 @@
 import { Prisma } from "@/generated/prisma/client";
 import type { ExerciseType } from "@/generated/prisma/enums";
 import type { ExerciseGetPayload } from "@/generated/prisma/models/Exercise";
+import { prisma } from "@/lib/prisma";
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -74,6 +75,10 @@ export type ExerciseMutationInput = {
   equipmentTypeId: string;
   primaryMuscleGroupId: string;
   secondaryMuscleGroupIds: string[];
+};
+
+export type RecentExerciseResponse = {
+  exercise_ids: string[];
 };
 
 type ParseResult =
@@ -220,6 +225,56 @@ export function toExerciseResponse(
     ),
     created_at: exercise.createdAt.toISOString(),
     updated_at: exercise.updatedAt.toISOString(),
+  };
+}
+
+export async function listRecentExerciseIds(): Promise<RecentExerciseResponse> {
+  const latestWorkout = await prisma.workoutSession.findFirst({
+    where: {
+      status: "completed",
+      endedAt: { not: null },
+    },
+    orderBy: [{ endedAt: "desc" }, { createdAt: "desc" }],
+    select: {
+      exercises: {
+        orderBy: { orderIndex: "asc" },
+        select: {
+          exerciseId: true,
+        },
+      },
+    },
+  });
+
+  if (!latestWorkout) {
+    return { exercise_ids: [] };
+  }
+
+  const seenExerciseIds = new Set<string>();
+  const exerciseIds = latestWorkout.exercises.flatMap((exercise) => {
+    if (!exercise.exerciseId || seenExerciseIds.has(exercise.exerciseId)) {
+      return [];
+    }
+
+    seenExerciseIds.add(exercise.exerciseId);
+    return [exercise.exerciseId];
+  });
+
+  const currentExercises = await prisma.exercise.findMany({
+    where: {
+      id: { in: exerciseIds },
+    },
+    select: {
+      id: true,
+    },
+  });
+  const currentExerciseIds = new Set(
+    currentExercises.map((exercise) => exercise.id),
+  );
+
+  return {
+    exercise_ids: exerciseIds.filter((exerciseId) =>
+      currentExerciseIds.has(exerciseId),
+    ),
   };
 }
 
