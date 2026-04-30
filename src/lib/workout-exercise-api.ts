@@ -336,19 +336,20 @@ export async function updateWorkoutExerciseWeightUnit(
       return { kind: "workout_exercise_not_found" as const };
     }
 
-    if (
-      !workoutExercise.exerciseId ||
-      workoutExercise.exercise?.exerciseType !== "weight_reps"
-    ) {
+    const exerciseType = workoutExercise.exercise?.exerciseType;
+
+    if (!exerciseType || exerciseType === "bodyweight_reps") {
       return { kind: "unsupported_exercise_type" as const };
     }
 
-    await tx.exerciseWeightUnitPreference.upsert({
-      where: { exerciseId: workoutExercise.exerciseId },
-      create: { exerciseId: workoutExercise.exerciseId, weightUnit },
-      update: { weightUnit },
-      select: { id: true },
-    });
+    if (workoutExercise.exerciseId && exerciseType === "weight_reps") {
+      await tx.exerciseWeightUnitPreference.upsert({
+        where: { exerciseId: workoutExercise.exerciseId },
+        create: { exerciseId: workoutExercise.exerciseId, weightUnit },
+        update: { weightUnit },
+        select: { id: true },
+      });
+    }
 
     for (const set of workoutExercise.sets) {
       if (set.weightInputValue === null) {

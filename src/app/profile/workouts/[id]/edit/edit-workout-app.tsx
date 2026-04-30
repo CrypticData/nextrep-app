@@ -162,6 +162,8 @@ type SortableHandleProps = {
   setActivatorNodeRef: ReturnType<typeof useSortable>["setActivatorNodeRef"];
 };
 
+const LBS_PER_KG = 2.2046226218;
+
 let nextDraftId = 0;
 
 export function EditWorkoutApp({ workoutId }: { workoutId: string }) {
@@ -740,6 +742,33 @@ function EditableExerciseCard({
 }: EditableExerciseCardProps & {
   dragHandleProps: SortableHandleProps;
 }) {
+  const [isUnitSheetOpen, setIsUnitSheetOpen] = useState(false);
+  const showWeightInput = exercise.exerciseType !== "bodyweight_reps";
+  const activeWeightUnit = getDraftExerciseWeightUnit(exercise, defaultWeightUnit);
+
+  function handleSelectExerciseUnit(weightUnit: WeightUnit) {
+    setIsUnitSheetOpen(false);
+
+    onUpdate((currentExercise) => ({
+      ...currentExercise,
+      inputWeightUnit: showWeightInput ? weightUnit : null,
+      sets: currentExercise.sets.map((set) => {
+        const currentUnit =
+          set.weightUnit ?? currentExercise.inputWeightUnit ?? defaultWeightUnit;
+
+        return {
+          ...set,
+          weightUnit,
+          weightValue: convertDraftSetInputValue(
+            set.weightValue,
+            currentUnit,
+            weightUnit,
+          ),
+        };
+      }),
+    }));
+  }
+
   return (
     <section className="-mx-1 rounded-[24px] border border-white/[0.08] bg-[#141414] py-4">
       <div className="flex items-start gap-2 px-4">
@@ -773,12 +802,18 @@ function EditableExerciseCard({
       <div className="mt-4">
         <div className="grid grid-cols-[42px_minmax(68px,1fr)_46px_56px_38px] items-center border-y border-white/[0.06] bg-[#101010] px-3 py-2.5 text-[10px] font-bold uppercase tracking-[0.09em] text-zinc-500">
           <span>Set</span>
-          <span className="text-center">
-            {getWeightColumnLabel(
-              exercise.exerciseType,
-              exercise.inputWeightUnit ?? defaultWeightUnit,
-            )}
-          </span>
+          <button
+            type="button"
+            onClick={() => setIsUnitSheetOpen(true)}
+            disabled={!showWeightInput}
+            className="flex min-w-0 items-center justify-center gap-1 rounded-full px-1.5 py-1 text-[10px] font-bold uppercase tracking-[0.09em] text-zinc-400 transition enabled:bg-white/[0.04] enabled:text-emerald-200 enabled:active:scale-95 disabled:cursor-default"
+            aria-label="Change weight unit"
+          >
+            <DumbbellIcon className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">
+              {getWeightColumnLabel(exercise.exerciseType, activeWeightUnit)}
+            </span>
+          </button>
           <span className="text-center">Reps</span>
           <span className="text-center">RPE</span>
           <span className="flex justify-center">
@@ -790,7 +825,7 @@ function EditableExerciseCard({
           exercise.sets.map((set) => (
             <EditableSetRow
               canSelectDrop={canSelectDropSet(exercise.sets, set.clientId)}
-              defaultWeightUnit={defaultWeightUnit}
+              activeWeightUnit={activeWeightUnit}
               exercise={exercise}
               key={set.clientId}
               onDelete={() => onDeleteSet(set)}
@@ -824,6 +859,17 @@ function EditableExerciseCard({
           Add Set
         </button>
       </div>
+
+      {isUnitSheetOpen ? (
+        <WeightUnitSheet
+          currentUnit={activeWeightUnit}
+          defaultUnit={defaultWeightUnit}
+          onClose={() => setIsUnitSheetOpen(false)}
+          onSelect={handleSelectExerciseUnit}
+          subtitle={exercise.exerciseNameSnapshot}
+          title="Weight Units"
+        />
+      ) : null}
     </section>
   );
 }
@@ -866,15 +912,15 @@ function AutosizeNotesTextarea({
 }
 
 function EditableSetRow({
+  activeWeightUnit,
   canSelectDrop,
-  defaultWeightUnit,
   exercise,
   onDelete,
   onUpdate,
   set,
 }: {
+  activeWeightUnit: WeightUnit;
   canSelectDrop: boolean;
-  defaultWeightUnit: WeightUnit;
   exercise: DraftWorkoutExercise;
   onDelete: () => void;
   onUpdate: (patch: Partial<DraftWorkoutSet>) => void;
@@ -883,8 +929,6 @@ function EditableSetRow({
   const [isSetTypeSheetOpen, setIsSetTypeSheetOpen] = useState(false);
   const [isRpeSheetOpen, setIsRpeSheetOpen] = useState(false);
   const showWeightInput = exercise.exerciseType !== "bodyweight_reps";
-  const activeWeightUnit =
-    set.weightUnit ?? exercise.inputWeightUnit ?? defaultWeightUnit;
 
   return (
     <div className="bg-[#101010]">
@@ -898,39 +942,30 @@ function EditableSetRow({
           {formatSetLabel(set)}
         </button>
 
-        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_42px] items-center gap-1">
+        <div className="flex min-w-0 justify-center">
           {showWeightInput ? (
-            <>
-              <input
-                name="edit-set-weight-value"
-                inputMode="decimal"
-                pattern="[0-9]*[.]?[0-9]*"
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                data-lpignore="true"
-                data-form-type="other"
-                value={set.weightValue}
-                onChange={(event) => onUpdate({ weightValue: event.target.value })}
-                placeholder="0"
-                className="h-11 w-full min-w-0 rounded-xl border border-transparent bg-transparent px-1 text-center text-xl font-semibold text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-white/[0.04]"
-                aria-label={getWeightInputLabel(exercise.exerciseType)}
-              />
-              <button
-                type="button"
-                onClick={() =>
-                  onUpdate({
-                    weightUnit: activeWeightUnit === "lbs" ? "kg" : "lbs",
-                  })
-                }
-                className="h-9 rounded-xl bg-white/[0.08] text-xs font-bold uppercase text-emerald-200 transition active:scale-95"
-                aria-label="Toggle set weight unit"
-              >
-                {activeWeightUnit}
-              </button>
-            </>
+            <input
+              name="edit-set-weight-value"
+              inputMode="decimal"
+              pattern="[0-9]*[.]?[0-9]*"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              data-lpignore="true"
+              data-form-type="other"
+              value={set.weightValue}
+              onChange={(event) =>
+                onUpdate({
+                  weightUnit: activeWeightUnit,
+                  weightValue: event.target.value,
+                })
+              }
+              placeholder="0"
+              className="h-11 w-full min-w-0 rounded-xl border border-transparent bg-transparent px-1 text-center text-xl font-semibold text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-white/[0.04]"
+              aria-label={getWeightInputLabel(exercise.exerciseType)}
+            />
           ) : (
-            <span className="col-span-2 text-center text-xl font-semibold text-zinc-700">
+            <span className="text-center text-xl font-semibold text-zinc-700">
               BW
             </span>
           )}
@@ -1123,6 +1158,66 @@ function SetTypeSheet({
                 Delete Set
               </span>
             </button>
+          </div>
+        </SheetField>
+      </div>
+    </BottomSheet>
+  );
+}
+
+function WeightUnitSheet({
+  currentUnit,
+  defaultUnit,
+  onClose,
+  onSelect,
+  subtitle,
+  title,
+}: {
+  currentUnit: WeightUnit;
+  defaultUnit: WeightUnit;
+  onClose: () => void;
+  onSelect: (unit: WeightUnit) => void;
+  subtitle: string;
+  title: string;
+}) {
+  const options: Array<{ label: string; value: WeightUnit }> = [
+    { label: `Default (${defaultUnit})`, value: defaultUnit },
+    { label: "kg", value: "kg" },
+    { label: "lbs", value: "lbs" },
+  ];
+
+  return (
+    <BottomSheet onClose={onClose}>
+      <SheetHeader onClose={onClose} subtitle={subtitle} title={title} />
+      <div className="flex-1 overflow-y-auto px-5 py-5">
+        <SheetField label="Unit">
+          <div className="space-y-3">
+            {options.map((option, index) => {
+              const isSelected =
+                index === 0
+                  ? currentUnit === defaultUnit
+                  : currentUnit === option.value && currentUnit !== defaultUnit;
+
+              return (
+                <button
+                  type="button"
+                  onClick={() => onSelect(option.value)}
+                  key={`${option.label}-${index}`}
+                  className={
+                    isSelected
+                      ? "grid min-h-14 w-full grid-cols-[1fr_28px] items-center rounded-2xl border border-emerald-400/40 bg-emerald-400/10 px-4 text-left transition active:scale-[0.99]"
+                      : "grid min-h-14 w-full grid-cols-[1fr_28px] items-center rounded-2xl border border-white/10 bg-[#232323] px-4 text-left transition active:scale-[0.99]"
+                  }
+                >
+                  <span className="text-base font-semibold text-white">
+                    {option.label}
+                  </span>
+                  {isSelected ? (
+                    <CheckIcon className="h-5 w-5 text-emerald-300" />
+                  ) : null}
+                </button>
+              );
+            })}
           </div>
         </SheetField>
       </div>
@@ -1514,8 +1609,21 @@ function toDraftWorkout(workout: CompletedWorkoutDetail): DraftWorkout {
     volumeValue: workout.volume.value,
     volumeUnit: workout.volume.unit,
     exercises: renumberExercises(
-      workout.exercises.map((exercise) =>
-        renumberExerciseSets({
+      workout.exercises.map((exercise) => {
+        const sets = exercise.sets.map((set) => ({
+          clientId: set.id,
+          id: set.id,
+          rowIndex: set.row_index,
+          setNumber: set.set_number,
+          setType: set.set_type,
+          weightValue: set.weight === null ? "" : formatNumberInput(set.weight),
+          weightUnit: set.weight_unit,
+          repsValue: set.reps.toString(),
+          rpeValue: set.rpe === null ? "" : formatRpeInput(set.rpe),
+          checked: set.checked,
+        }));
+
+        return renumberExerciseSets({
           clientId: exercise.id,
           id: exercise.id,
           exerciseId: exercise.exercise_id,
@@ -1524,23 +1632,17 @@ function toDraftWorkout(workout: CompletedWorkoutDetail): DraftWorkout {
           equipmentNameSnapshot: exercise.equipment_name_snapshot,
           primaryMuscleGroupNameSnapshot:
             exercise.primary_muscle_group_name_snapshot,
-          inputWeightUnit: exercise.input_weight_unit,
+          inputWeightUnit: getInitialDraftExerciseWeightUnit(
+            exercise.exercise_type ?? "weight_reps",
+            exercise.input_weight_unit,
+            sets,
+            workout.default_weight_unit,
+          ),
           notes: exercise.notes ?? "",
           exerciseType: exercise.exercise_type ?? "weight_reps",
-          sets: exercise.sets.map((set) => ({
-            clientId: set.id,
-            id: set.id,
-            rowIndex: set.row_index,
-            setNumber: set.set_number,
-            setType: set.set_type,
-            weightValue: set.weight === null ? "" : formatNumberInput(set.weight),
-            weightUnit: set.weight_unit,
-            repsValue: set.reps.toString(),
-            rpeValue: set.rpe === null ? "" : formatRpeInput(set.rpe),
-            checked: set.checked,
-          })),
-        }),
-      ),
+          sets,
+        });
+      }),
     ),
   };
 }
@@ -1551,7 +1653,7 @@ function createDraftExercise(
   orderIndex: number,
 ): DraftWorkoutExercise {
   const inputWeightUnit =
-    exercise.exercise_type === "weight_reps"
+    exercise.exercise_type !== "bodyweight_reps"
       ? exercise.weight_unit_preference ?? defaultWeightUnit
       : null;
 
@@ -1914,6 +2016,59 @@ function formatRpeInput(value: number) {
   return Number.isInteger(value) ? value.toString() : value.toFixed(1);
 }
 
+function getInitialDraftExerciseWeightUnit(
+  exerciseType: ExerciseType,
+  inputWeightUnit: WeightUnit | null,
+  sets: DraftWorkoutSet[],
+  defaultWeightUnit: WeightUnit,
+) {
+  if (exerciseType === "bodyweight_reps") {
+    return null;
+  }
+
+  return (
+    inputWeightUnit ??
+    sets.find((set) => set.weightUnit)?.weightUnit ??
+    defaultWeightUnit
+  );
+}
+
+function getDraftExerciseWeightUnit(
+  exercise: DraftWorkoutExercise,
+  defaultWeightUnit: WeightUnit,
+) {
+  if (exercise.exerciseType === "bodyweight_reps") {
+    return defaultWeightUnit;
+  }
+
+  return (
+    exercise.inputWeightUnit ??
+    exercise.sets.find((set) => set.weightUnit)?.weightUnit ??
+    defaultWeightUnit
+  );
+}
+
+function convertDraftSetInputValue(
+  value: string,
+  fromUnit: WeightUnit,
+  toUnit: WeightUnit,
+) {
+  if (value.trim().length === 0 || fromUnit === toUnit) {
+    return value;
+  }
+
+  const parsedValue = Number(value);
+
+  if (!Number.isFinite(parsedValue)) {
+    return value;
+  }
+
+  const convertedValue =
+    fromUnit === "kg" ? parsedValue * LBS_PER_KG : parsedValue / LBS_PER_KG;
+
+  return convertedValue.toFixed(2);
+}
+
 function formatSetLabel(set: DraftWorkoutSet) {
   if (set.setType === "warmup") {
     return "W";
@@ -1969,11 +2124,11 @@ function getWeightColumnLabel(exerciseType: ExerciseType, weightUnit: WeightUnit
   }
 
   if (exerciseType === "weighted_bodyweight") {
-    return `Add ${weightUnit.toUpperCase()}`;
+    return `+${weightUnit.toUpperCase()}`;
   }
 
   if (exerciseType === "assisted_bodyweight") {
-    return `Assist ${weightUnit.toUpperCase()}`;
+    return `-${weightUnit.toUpperCase()}`;
   }
 
   return weightUnit.toUpperCase();

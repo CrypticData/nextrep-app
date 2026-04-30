@@ -2032,7 +2032,7 @@ function WorkoutExerciseCard({
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
   const activeWeightUnit =
     workoutExercise.input_weight_unit ?? sessionDefaultWeightUnit;
-  const canChangeExerciseUnit = exerciseType === "weight_reps";
+  const canChangeExerciseUnit = exerciseType !== "bodyweight_reps";
 
   async function handleSelectExerciseUnit(weightUnit: "lbs" | "kg") {
     setIsUnitSheetOpen(false);
@@ -3181,6 +3181,14 @@ function getWeightColumnLabel(
 ) {
   if (exerciseType === "bodyweight_reps") {
     return "BW";
+  }
+
+  if (exerciseType === "weighted_bodyweight") {
+    return `+${weightUnit.toUpperCase()}`;
+  }
+
+  if (exerciseType === "assisted_bodyweight") {
+    return `-${weightUnit.toUpperCase()}`;
   }
 
   return weightUnit.toUpperCase();
