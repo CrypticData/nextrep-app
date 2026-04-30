@@ -14,6 +14,9 @@ import { AppShell } from "./app-shell";
 import { ConfirmSheet } from "./confirm-sheet";
 import { ExerciseThumb } from "./exercise-thumb";
 import { useToast } from "./toast";
+import type { ExerciseType } from "@/generated/prisma/enums";
+import { getExerciseTypeLabel } from "@/lib/exercise-type";
+import { formatSetLabel, getSetLabelClassName } from "@/lib/set-display";
 
 type Reference = {
   id: string;
@@ -40,12 +43,6 @@ type ExercisePayload = {
   primary_muscle_group_id: string;
   secondary_muscle_group_ids: string[];
 };
-
-type ExerciseType =
-  | "weight_reps"
-  | "bodyweight_reps"
-  | "weighted_bodyweight"
-  | "assisted_bodyweight";
 
 type SetType = "normal" | "warmup" | "failure" | "drop";
 
@@ -1539,10 +1536,6 @@ const exerciseTypeOptions: {
   },
 ];
 
-function getExerciseTypeLabel(exerciseType: ExerciseType) {
-  return getExerciseTypeOption(exerciseType).label;
-}
-
 function getExerciseTypeOption(exerciseType: ExerciseType) {
   return (
     exerciseTypeOptions.find((option) => option.value === exerciseType)
@@ -1573,22 +1566,6 @@ function formatHistoryLoad(
   return "No weight";
 }
 
-function formatSetLabel(set: ExerciseHistorySet) {
-  if (set.set_type === "warmup") {
-    return "W";
-  }
-
-  if (set.set_type === "failure") {
-    return "F";
-  }
-
-  if (set.set_type === "drop") {
-    return "D";
-  }
-
-  return set.set_number?.toString() ?? set.row_index.toString();
-}
-
 function formatSetType(setType: SetType) {
   if (setType === "warmup") {
     return "Warmup";
@@ -1603,22 +1580,6 @@ function formatSetType(setType: SetType) {
   }
 
   return "Set";
-}
-
-function getSetLabelClassName(setType: SetType) {
-  if (setType === "warmup") {
-    return "text-amber-300";
-  }
-
-  if (setType === "failure") {
-    return "text-red-400";
-  }
-
-  if (setType === "drop") {
-    return "text-sky-400";
-  }
-
-  return "text-white";
 }
 
 function formatHistoryDate(value: string) {

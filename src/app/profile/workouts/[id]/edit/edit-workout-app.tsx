@@ -35,14 +35,17 @@ import {
   formatRoundedDuration,
   toVisibleDurationParts,
 } from "@/lib/workout-duration";
+import type { ExerciseType } from "@/generated/prisma/enums";
+import {
+  getExerciseTypeLabel,
+  getWeightColumnLabel,
+  getWeightInputLabel,
+  hasWeightInput,
+} from "@/lib/exercise-type";
+import { formatSetLabel, getSetLabelClassName } from "@/lib/set-display";
 
 type WeightUnit = "lbs" | "kg";
 type SetType = "normal" | "warmup" | "failure" | "drop";
-type ExerciseType =
-  | "weight_reps"
-  | "bodyweight_reps"
-  | "weighted_bodyweight"
-  | "assisted_bodyweight";
 
 type Reference = {
   id: string;
@@ -743,7 +746,7 @@ function EditableExerciseCard({
   dragHandleProps: SortableHandleProps;
 }) {
   const [isUnitSheetOpen, setIsUnitSheetOpen] = useState(false);
-  const showWeightInput = exercise.exerciseType !== "bodyweight_reps";
+  const showWeightInput = hasWeightInput(exercise.exerciseType);
   const activeWeightUnit = getDraftExerciseWeightUnit(exercise, defaultWeightUnit);
 
   function handleSelectExerciseUnit(weightUnit: WeightUnit) {
@@ -928,7 +931,7 @@ function EditableSetRow({
 }) {
   const [isSetTypeSheetOpen, setIsSetTypeSheetOpen] = useState(false);
   const [isRpeSheetOpen, setIsRpeSheetOpen] = useState(false);
-  const showWeightInput = exercise.exerciseType !== "bodyweight_reps";
+  const showWeightInput = hasWeightInput(exercise.exerciseType);
 
   return (
     <div className="bg-[#101010]">
@@ -1653,7 +1656,7 @@ function createDraftExercise(
   orderIndex: number,
 ): DraftWorkoutExercise {
   const inputWeightUnit =
-    exercise.exercise_type !== "bodyweight_reps"
+    hasWeightInput(exercise.exercise_type)
       ? exercise.weight_unit_preference ?? defaultWeightUnit
       : null;
 
@@ -1764,7 +1767,7 @@ function validateDraft(draft: DraftWorkout):
     (count, exercise) =>
       count +
       exercise.sets.filter((set) => {
-        if (exercise.exerciseType === "bodyweight_reps") {
+        if (!hasWeightInput(exercise.exerciseType)) {
           return false;
         }
 
@@ -1808,7 +1811,7 @@ function toSavePayload(
       notes: exercise.notes.trim() || null,
       input_weight_unit: exercise.inputWeightUnit,
       sets: exercise.sets.map((set) => {
-        const showWeightInput = exercise.exerciseType !== "bodyweight_reps";
+        const showWeightInput = hasWeightInput(exercise.exerciseType);
 
         return {
           id: set.id,
@@ -2022,7 +2025,7 @@ function getInitialDraftExerciseWeightUnit(
   sets: DraftWorkoutSet[],
   defaultWeightUnit: WeightUnit,
 ) {
-  if (exerciseType === "bodyweight_reps") {
+  if (!hasWeightInput(exerciseType)) {
     return null;
   }
 
@@ -2037,7 +2040,7 @@ function getDraftExerciseWeightUnit(
   exercise: DraftWorkoutExercise,
   defaultWeightUnit: WeightUnit,
 ) {
-  if (exercise.exerciseType === "bodyweight_reps") {
+  if (!hasWeightInput(exercise.exerciseType)) {
     return defaultWeightUnit;
   }
 
@@ -2069,22 +2072,6 @@ function convertDraftSetInputValue(
   return convertedValue.toFixed(2);
 }
 
-function formatSetLabel(set: DraftWorkoutSet) {
-  if (set.setType === "warmup") {
-    return "W";
-  }
-
-  if (set.setType === "failure") {
-    return "F";
-  }
-
-  if (set.setType === "drop") {
-    return "D";
-  }
-
-  return set.setNumber?.toString() ?? set.rowIndex.toString();
-}
-
 function canSelectDropSet(sets: DraftWorkoutSet[], setClientId: string) {
   const orderedSets = [...sets].sort((first, second) => {
     return first.rowIndex - second.rowIndex;
@@ -2100,63 +2087,6 @@ function canSelectDropSet(sets: DraftWorkoutSet[], setClientId: string) {
   return orderedSets
     .slice(0, currentSetIndex)
     .some((set) => set.setType === "normal" || set.setType === "failure");
-}
-
-function getSetLabelClassName(setType: SetType) {
-  if (setType === "warmup") {
-    return "text-amber-300";
-  }
-
-  if (setType === "failure") {
-    return "text-red-400";
-  }
-
-  if (setType === "drop") {
-    return "text-sky-400";
-  }
-
-  return "text-white";
-}
-
-function getWeightColumnLabel(exerciseType: ExerciseType, weightUnit: WeightUnit) {
-  if (exerciseType === "bodyweight_reps") {
-    return "BW";
-  }
-
-  if (exerciseType === "weighted_bodyweight") {
-    return `+${weightUnit.toUpperCase()}`;
-  }
-
-  if (exerciseType === "assisted_bodyweight") {
-    return `-${weightUnit.toUpperCase()}`;
-  }
-
-  return weightUnit.toUpperCase();
-}
-
-function getWeightInputLabel(exerciseType: ExerciseType) {
-  if (exerciseType === "weighted_bodyweight") {
-    return "Added";
-  }
-
-  if (exerciseType === "assisted_bodyweight") {
-    return "Assist";
-  }
-
-  return "Weight";
-}
-
-function getExerciseTypeLabel(exerciseType: ExerciseType) {
-  switch (exerciseType) {
-    case "weight_reps":
-      return "Weight";
-    case "bodyweight_reps":
-      return "Bodyweight";
-    case "weighted_bodyweight":
-      return "Weighted";
-    case "assisted_bodyweight":
-      return "Assisted";
-  }
 }
 
 type IconProps = {

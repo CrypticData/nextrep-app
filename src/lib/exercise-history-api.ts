@@ -1,6 +1,7 @@
 import { Prisma } from "@/generated/prisma/client";
 import type { ExerciseType, WeightUnit } from "@/generated/prisma/enums";
 import type { WorkoutSessionGetPayload } from "@/generated/prisma/models/WorkoutSession";
+import { hasWeightInput } from "@/lib/exercise-type";
 import { prisma } from "@/lib/prisma";
 import { convertWeight } from "@/lib/weight-units";
 import { isUuid } from "@/lib/workout-session-api";
@@ -209,7 +210,9 @@ function toHistorySet(
     set_type: set.setType,
     weight: getDisplayWeight(set, exerciseType, displayWeightUnit),
     weight_unit:
-      exerciseType === "bodyweight_reps" ? null : getDisplayWeightUnit(set, displayWeightUnit),
+      !hasWeightInput(exerciseType)
+        ? null
+        : getDisplayWeightUnit(set, displayWeightUnit),
     bodyweight: getDisplayBodyweight(set, displayWeightUnit),
     bodyweight_unit: set.bodyweightValue ? displayWeightUnit : null,
     reps: set.reps ?? 0,
@@ -224,7 +227,7 @@ function getDisplayWeight(
   exerciseType: ExerciseType,
   displayWeightUnit: WeightUnit,
 ) {
-  if (exerciseType === "bodyweight_reps") {
+  if (!hasWeightInput(exerciseType)) {
     return null;
   }
 

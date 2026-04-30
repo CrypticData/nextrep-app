@@ -1,6 +1,7 @@
 import { Prisma } from "@/generated/prisma/client";
 import type { ExerciseType, WeightUnit } from "@/generated/prisma/enums";
 import type { WorkoutSessionExerciseGetPayload } from "@/generated/prisma/models/WorkoutSessionExercise";
+import { hasWeightInput, storesInputWeightUnit } from "@/lib/exercise-type";
 import { isUuid } from "@/lib/exercise-api";
 import { prisma } from "@/lib/prisma";
 import { convertWeight, readWeightUnit } from "@/lib/weight-units";
@@ -338,11 +339,14 @@ export async function updateWorkoutExerciseWeightUnit(
 
     const exerciseType = workoutExercise.exercise?.exerciseType;
 
-    if (!exerciseType || exerciseType === "bodyweight_reps") {
+    if (!exerciseType || !hasWeightInput(exerciseType)) {
       return { kind: "unsupported_exercise_type" as const };
     }
 
-    if (workoutExercise.exerciseId && exerciseType === "weight_reps") {
+    if (
+      workoutExercise.exerciseId &&
+      storesInputWeightUnit(exerciseType)
+    ) {
       await tx.exerciseWeightUnitPreference.upsert({
         where: { exerciseId: workoutExercise.exerciseId },
         create: { exerciseId: workoutExercise.exerciseId, weightUnit },
@@ -577,7 +581,7 @@ function resolveWorkoutExerciseInputUnit(
   preferenceWeightUnit: WeightUnit | undefined,
   defaultWeightUnit: WeightUnit,
 ) {
-  return exerciseType === "weight_reps"
+  return storesInputWeightUnit(exerciseType)
     ? (preferenceWeightUnit ?? defaultWeightUnit)
     : null;
 }

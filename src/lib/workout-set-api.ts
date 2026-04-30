@@ -4,6 +4,12 @@ import type {
   WeightUnit,
   WorkoutSetType,
 } from "@/generated/prisma/enums";
+import {
+  EXERCISE_TYPE_BEHAVIOR,
+  hasWeightInput,
+  storesInputWeightUnit,
+  usesBodyweight,
+} from "@/lib/exercise-type";
 import { isUuid } from "@/lib/exercise-api";
 import { prisma } from "@/lib/prisma";
 import { convertWeight, readWeightUnit } from "@/lib/weight-units";
@@ -196,7 +202,7 @@ export async function updateActiveWorkoutSet(
     }
 
     if (
-      exerciseType === "weight_reps" &&
+      storesInputWeightUnit(exerciseType) &&
       input.weightInputUnit &&
       existingSet.workoutSessionExercise.exerciseId
     ) {
@@ -515,7 +521,7 @@ async function resolveEffectiveWeight(
   exerciseType: ExerciseType,
   sessionWeightUnit: WeightUnit,
 ): Promise<EffectiveWeight> {
-  if (exerciseType === "bodyweight_reps") {
+  if (!hasWeightInput(exerciseType) && usesBodyweight(exerciseType)) {
     return resolveBodyweightOnly(tx, existingSet, input, sessionWeightUnit);
   }
 
@@ -602,9 +608,10 @@ async function resolveBodyweightWithOptionalLoad(
   const bodyweight = await findLatestBodyweightInUnit(tx, sessionWeightUnit);
   const externalLoad = normalizedValue ?? new Prisma.Decimal(0);
   const volumeBase =
-    bodyweight && exerciseType === "weighted_bodyweight"
+    bodyweight && EXERCISE_TYPE_BEHAVIOR[exerciseType].loadModifier === "add"
       ? bodyweight.add(externalLoad)
-      : bodyweight && exerciseType === "assisted_bodyweight"
+      : bodyweight &&
+          EXERCISE_TYPE_BEHAVIOR[exerciseType].loadModifier === "subtract"
         ? bodyweight.sub(externalLoad)
         : null;
 

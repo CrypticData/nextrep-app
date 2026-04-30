@@ -6,12 +6,8 @@ import { AppShell } from "@/app/app-shell";
 import { ConfirmSheet } from "@/app/confirm-sheet";
 import { ExerciseThumb } from "@/app/exercise-thumb";
 import { useToast } from "@/app/toast";
-
-type ExerciseType =
-  | "weight_reps"
-  | "bodyweight_reps"
-  | "weighted_bodyweight"
-  | "assisted_bodyweight";
+import type { ExerciseType } from "@/generated/prisma/enums";
+import { formatSetLabel, getSetLabelClassName } from "@/lib/set-display";
 
 type CompletedWorkoutDetail = {
   id: string;
@@ -452,38 +448,6 @@ function WorkoutDetailError({
       </button>
     </div>
   );
-}
-
-function formatSetLabel(set: CompletedWorkoutSet) {
-  if (set.set_type === "warmup") {
-    return "W";
-  }
-
-  if (set.set_type === "failure") {
-    return "F";
-  }
-
-  if (set.set_type === "drop") {
-    return "D";
-  }
-
-  return set.set_number?.toString() ?? set.row_index.toString();
-}
-
-function getSetLabelClassName(setType: CompletedWorkoutSet["set_type"]) {
-  if (setType === "warmup") {
-    return "text-amber-300";
-  }
-
-  if (setType === "failure") {
-    return "text-red-400";
-  }
-
-  if (setType === "drop") {
-    return "text-sky-400";
-  }
-
-  return "text-white";
 }
 
 function formatSetSummary(

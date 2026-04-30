@@ -6,6 +6,12 @@ import type {
 } from "@/generated/prisma/enums";
 import type { CompletedWorkoutDetail } from "@/lib/completed-workout-api";
 import { getCompletedWorkoutDetail } from "@/lib/completed-workout-api";
+import {
+  EXERCISE_TYPE_BEHAVIOR,
+  hasWeightInput,
+  storesInputWeightUnit,
+  usesBodyweight,
+} from "@/lib/exercise-type";
 import { prisma } from "@/lib/prisma";
 import { convertWeight } from "@/lib/weight-units";
 import { MAX_WORKOUT_DURATION_SECONDS } from "@/lib/workout-duration";
@@ -620,7 +626,7 @@ async function resolveEffectiveWeight(
 > {
   const reps = setInput.reps;
 
-  if (exerciseType === "bodyweight_reps") {
+  if (!hasWeightInput(exerciseType) && usesBodyweight(exerciseType)) {
     const bodyweight = await findWorkoutBodyweightInUnit(
       tx,
       existingSet,
@@ -691,9 +697,10 @@ async function resolveEffectiveWeight(
   }
 
   const volumeBase =
-    bodyweight && exerciseType === "weighted_bodyweight"
+    bodyweight && EXERCISE_TYPE_BEHAVIOR[exerciseType].loadModifier === "add"
       ? bodyweight.add(externalLoad)
-      : bodyweight && exerciseType === "assisted_bodyweight"
+      : bodyweight &&
+          EXERCISE_TYPE_BEHAVIOR[exerciseType].loadModifier === "subtract"
         ? bodyweight.sub(externalLoad)
         : null;
 
@@ -800,7 +807,7 @@ function resolveExistingInputWeightUnit(
   requestedUnit: WeightUnit | null,
   existingUnit: WeightUnit | null,
 ) {
-  if (exerciseType !== "weight_reps") {
+  if (!storesInputWeightUnit(exerciseType)) {
     return null;
   }
 
@@ -812,7 +819,7 @@ function resolveNewInputWeightUnit(
   requestedUnit: WeightUnit | null,
   defaultWeightUnit: WeightUnit,
 ) {
-  if (exercise.exerciseType !== "weight_reps") {
+  if (!storesInputWeightUnit(exercise.exerciseType)) {
     return null;
   }
 

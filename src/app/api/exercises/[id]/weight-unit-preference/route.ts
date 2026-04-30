@@ -5,6 +5,7 @@ import {
   toExerciseWeightUnitPreferenceResponse,
   upsertExerciseWeightUnitPreference,
 } from "@/lib/exercise-weight-unit-preference-api";
+import { storesInputWeightUnit } from "@/lib/exercise-type";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -58,7 +59,7 @@ export async function GET(
     return notFound();
   }
 
-  if (exercise.exerciseType !== "weight_reps") {
+  if (!storesInputWeightUnit(exercise.exerciseType)) {
     return badRequest(
       "Exercise weight unit preference is only supported for weight_reps exercises.",
     );

@@ -43,17 +43,20 @@ import {
   formatRoundedDuration,
   toVisibleDurationParts,
 } from "@/lib/workout-duration";
+import type { ExerciseType } from "@/generated/prisma/enums";
+import {
+  getWeightColumnLabel,
+  getWeightInputLabel,
+  hasWeightInput,
+  storesInputWeightUnit,
+  usesBodyweight,
+} from "@/lib/exercise-type";
 import { HttpError } from "@/lib/http-error";
 import { useSaveQueue } from "@/lib/save-queue";
+import { formatSetLabel, getSetLabelClassName } from "@/lib/set-display";
 
 type WorkoutScreen = "start" | "live" | "save";
 type WorkoutSession = ActiveWorkoutSession;
-
-type ExerciseType =
-  | "weight_reps"
-  | "bodyweight_reps"
-  | "weighted_bodyweight"
-  | "assisted_bodyweight";
 
 type WorkoutSet = {
   id: string;
@@ -761,7 +764,8 @@ function LiveWorkout({
         return {
           ...workoutExercise,
           input_weight_unit:
-            workoutExercise.exercise_type === "weight_reps" &&
+            workoutExercise.exercise_type &&
+            storesInputWeightUnit(workoutExercise.exercise_type) &&
             patch.weight_input_unit
               ? patch.weight_input_unit
               : workoutExercise.input_weight_unit,
@@ -2032,7 +2036,7 @@ function WorkoutExerciseCard({
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
   const activeWeightUnit =
     workoutExercise.input_weight_unit ?? sessionDefaultWeightUnit;
-  const canChangeExerciseUnit = exerciseType !== "bodyweight_reps";
+  const canChangeExerciseUnit = hasWeightInput(exerciseType);
 
   async function handleSelectExerciseUnit(weightUnit: "lbs" | "kg") {
     setIsUnitSheetOpen(false);
@@ -2257,7 +2261,7 @@ function WorkoutSetEditorRow({
   sessionDefaultWeightUnit: "lbs" | "kg";
   set: WorkoutSet;
 }) {
-  const showWeightInput = exerciseType !== "bodyweight_reps";
+  const showWeightInput = hasWeightInput(exerciseType);
   const [isSetTypeSheetOpen, setIsSetTypeSheetOpen] = useState(false);
   const [isRpeSheetOpen, setIsRpeSheetOpen] = useState(false);
   const [weightValue, setWeightValue] = useState(
@@ -3130,22 +3134,6 @@ function getWorkoutSummary(
   };
 }
 
-function formatSetLabel(set: WorkoutSet) {
-  if (set.set_type === "warmup") {
-    return "W";
-  }
-
-  if (set.set_type === "failure") {
-    return "F";
-  }
-
-  if (set.set_type === "drop") {
-    return "D";
-  }
-
-  return set.set_number?.toString() ?? set.row_index.toString();
-}
-
 function canSelectDropSet(sets: WorkoutSet[], setId: string) {
   const orderedSets = sortWorkoutSets(sets);
   const currentSetIndex = orderedSets.findIndex((set) => set.id === setId);
@@ -3157,41 +3145,6 @@ function canSelectDropSet(sets: WorkoutSet[], setId: string) {
   return orderedSets
     .slice(0, currentSetIndex)
     .some((set) => set.set_type === "normal" || set.set_type === "failure");
-}
-
-function getSetLabelClassName(setType: WorkoutSet["set_type"]) {
-  if (setType === "warmup") {
-    return "text-amber-300";
-  }
-
-  if (setType === "failure") {
-    return "text-red-400";
-  }
-
-  if (setType === "drop") {
-    return "text-sky-400";
-  }
-
-  return "text-white";
-}
-
-function getWeightColumnLabel(
-  exerciseType: ExerciseType,
-  weightUnit: "lbs" | "kg",
-) {
-  if (exerciseType === "bodyweight_reps") {
-    return "BW";
-  }
-
-  if (exerciseType === "weighted_bodyweight") {
-    return `+${weightUnit.toUpperCase()}`;
-  }
-
-  if (exerciseType === "assisted_bodyweight") {
-    return `-${weightUnit.toUpperCase()}`;
-  }
-
-  return weightUnit.toUpperCase();
 }
 
 function formatVolumeSummary(value: number, unit: "lbs" | "kg") {
@@ -3267,23 +3220,7 @@ function parseNullableInteger(value: string) {
 }
 
 function usesBodyweightForVolume(exerciseType: ExerciseType) {
-  return (
-    exerciseType === "bodyweight_reps" ||
-    exerciseType === "weighted_bodyweight" ||
-    exerciseType === "assisted_bodyweight"
-  );
-}
-
-function getWeightInputLabel(exerciseType: ExerciseType) {
-  if (exerciseType === "weighted_bodyweight") {
-    return "Added";
-  }
-
-  if (exerciseType === "assisted_bodyweight") {
-    return "Assist";
-  }
-
-  return "Weight";
+  return usesBodyweight(exerciseType);
 }
 
 type IconProps = {

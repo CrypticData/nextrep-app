@@ -1,4 +1,5 @@
 import type { WeightUnit } from "@/generated/prisma/enums";
+import { storesInputWeightUnit } from "@/lib/exercise-type";
 import { prisma } from "@/lib/prisma";
 import { readWeightUnit } from "@/lib/weight-units";
 
@@ -42,7 +43,7 @@ export async function upsertExerciseWeightUnitPreference(
       return { kind: "not_found" as const };
     }
 
-    if (exercise.exerciseType !== "weight_reps") {
+    if (!storesInputWeightUnit(exercise.exerciseType)) {
       return { kind: "unsupported_exercise_type" as const };
     }
 
