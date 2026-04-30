@@ -10,6 +10,11 @@ import {
 } from "./app-settings-cache";
 import { ActiveWorkoutCard } from "./active-workout-card";
 import { useActiveWorkout } from "./active-workout-context";
+import {
+  TOP_BAR_BORDER_CLASS,
+  TOP_BAR_ROW_CLASS,
+  TOP_BAR_TITLE_CLASS,
+} from "./top-bar";
 import { ToastProvider } from "./toast";
 
 type AppShellProps = {
@@ -94,13 +99,15 @@ export function AppShell({
     <div className="h-svh overflow-hidden bg-[#050505] text-zinc-50">
       <div className="mx-auto flex h-svh min-h-0 w-full max-w-md flex-col overflow-hidden bg-[#101010] shadow-2xl shadow-black/40">
         {hideHeader ? null : (
-          <header className="safe-header shrink-0 border-b border-white/10 pb-4">
+          <header
+            className={`safe-header shrink-0 bg-[#181818] ${TOP_BAR_BORDER_CLASS}`}
+          >
             {subpage ? (
               <div
                 className={
                   backText
-                    ? "grid grid-cols-[74px_1fr_74px] items-center gap-3"
-                    : "grid grid-cols-[44px_1fr_44px] items-center gap-3"
+                    ? `grid grid-cols-[74px_1fr_74px] gap-3 ${TOP_BAR_ROW_CLASS}`
+                    : `grid grid-cols-[40px_1fr_40px] gap-3 ${TOP_BAR_ROW_CLASS}`
                 }
               >
                 {backAction ? (
@@ -109,8 +116,8 @@ export function AppShell({
                     onClick={backAction}
                     className={
                       backText
-                        ? "flex h-11 items-center text-sm font-semibold text-zinc-300 transition hover:text-white active:scale-95"
-                        : "flex h-11 w-11 items-center justify-center rounded-full text-zinc-300 transition hover:bg-white/[0.06] hover:text-white active:scale-95"
+                        ? "flex h-10 items-center text-sm font-semibold leading-none text-zinc-300 transition hover:text-white active:scale-95"
+                        : "flex h-10 w-10 items-center justify-center rounded-full text-zinc-300 transition hover:bg-white/[0.06] hover:text-white active:scale-95"
                     }
                     aria-label={backLabel}
                   >
@@ -121,37 +128,36 @@ export function AppShell({
                     href={backHref}
                     className={
                       backText
-                        ? "flex h-11 items-center text-sm font-semibold text-zinc-300 transition hover:text-white active:scale-95"
-                        : "flex h-11 w-11 items-center justify-center rounded-full text-zinc-300 transition hover:bg-white/[0.06] hover:text-white active:scale-95"
+                        ? "flex h-10 items-center text-sm font-semibold leading-none text-zinc-300 transition hover:text-white active:scale-95"
+                        : "flex h-10 w-10 items-center justify-center rounded-full text-zinc-300 transition hover:bg-white/[0.06] hover:text-white active:scale-95"
                     }
                     aria-label={backLabel}
                   >
                     {backText ?? <BackIcon className="h-5 w-5" />}
                   </Link>
                 ) : (
-                  <div className="h-11 w-11" />
+                  <div className="h-10 w-10" />
                 )}
-                <h1 className="min-w-0 truncate text-center text-xl font-semibold tracking-normal text-white">
+                <h1
+                  className={`min-w-0 truncate text-center text-xl font-semibold tracking-normal text-white ${TOP_BAR_TITLE_CLASS}`}
+                >
                   {title}
                 </h1>
                 {action ? (
-                  <div className="flex h-11 w-11 items-center justify-center">
+                  <div className="flex h-10 w-10 items-center justify-center justify-self-end">
                     {action}
                   </div>
                 ) : (
-                  <div className="h-11 w-11" />
+                  <div className="h-10 w-10 justify-self-end" />
                 )}
               </div>
             ) : (
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300/70">
-                    NextRep
-                  </p>
-                  <h1 className="mt-1 text-2xl font-semibold tracking-normal text-white">
-                    {title}
-                  </h1>
-                </div>
+              <div className={`flex justify-between gap-4 ${TOP_BAR_ROW_CLASS}`}>
+                <h1
+                  className={`min-w-0 truncate text-xl font-semibold tracking-normal text-white ${TOP_BAR_TITLE_CLASS}`}
+                >
+                  {title}
+                </h1>
                 {action ? <div className="shrink-0">{action}</div> : null}
               </div>
             )}

@@ -131,7 +131,7 @@ export function ProfileMenuApp() {
           <button
             type="button"
             onClick={() => window.alert("Profile editing arrives later.")}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-white/[0.08] text-zinc-200 transition hover:bg-white/[0.12] active:scale-95"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.08] text-zinc-200 transition hover:bg-white/[0.12] active:scale-95"
             aria-label="Edit profile"
           >
             <EditIcon className="h-5 w-5" />
@@ -139,7 +139,7 @@ export function ProfileMenuApp() {
           <button
             type="button"
             onClick={() => router.push("/profile/settings")}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-white/[0.08] text-zinc-200 transition hover:bg-white/[0.12] active:scale-95"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.08] text-zinc-200 transition hover:bg-white/[0.12] active:scale-95"
             aria-label="Settings"
           >
             <SettingsIcon className="h-5 w-5" />

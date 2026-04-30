@@ -26,6 +26,11 @@ import type { ActiveWorkoutSession } from "./active-workout-context";
 import { AppShell } from "./app-shell";
 import { ConfirmSheet } from "./confirm-sheet";
 import { ExerciseThumb } from "./exercise-thumb";
+import {
+  TOP_BAR_BORDER_CLASS,
+  TOP_BAR_ROW_CLASS,
+  TOP_BAR_TITLE_CLASS,
+} from "./top-bar";
 import { useToast } from "./toast";
 import {
   WorkoutMetadataHeader,
@@ -1621,7 +1626,7 @@ function SaveWorkoutScreen({
             type="button"
             onClick={() => void handleSaveWorkout()}
             disabled={isSaving}
-            className="h-10 rounded-xl bg-emerald-500 px-4 text-sm font-bold text-white shadow-lg shadow-emerald-950/40 transition active:scale-[0.99] disabled:cursor-wait disabled:bg-zinc-700 disabled:text-zinc-300"
+            className="inline-flex h-10 items-center justify-center rounded-xl bg-emerald-500 px-4 text-sm font-bold leading-none text-white shadow-lg shadow-emerald-950/40 transition active:scale-[0.99] disabled:cursor-wait disabled:bg-zinc-700 disabled:text-zinc-300"
           >
             {isSaving ? "Saving" : "Save"}
           </button>
@@ -1782,50 +1787,56 @@ function LiveWorkoutStickyHeader({
   const isFinishUnavailable = isFinishing || isSyncBusy;
 
   return (
-    <div className="sticky top-0 z-30 -mx-5 -mt-px bg-[#101010]">
-      <div className="grid min-h-[68px] grid-cols-[40px_minmax(0,1fr)_auto_40px_auto] items-center gap-2 border-b border-white/10 bg-[#181818] px-5 py-3">
-        <button
-          type="button"
-          onClick={onMinimize}
-          className="-ml-2 flex h-10 w-10 items-center justify-center rounded-full text-zinc-100 transition active:scale-95 active:bg-white/[0.06]"
-          aria-label="Minimize live workout"
+    <div className="sticky top-0 z-30 -mx-5 -mt-px bg-[#101010] pt-[var(--safe-area-top)]">
+      <div className={`bg-[#181818] ${TOP_BAR_BORDER_CLASS}`}>
+        <div
+          className={`grid grid-cols-[40px_minmax(0,1fr)_auto_40px_auto] gap-2 px-5 ${TOP_BAR_ROW_CLASS}`}
         >
-          <ChevronDownIcon className="h-7 w-7" />
-        </button>
-        <h1 className="min-w-0 truncate text-xl font-semibold tracking-normal text-white">
-          Log Workout
-        </h1>
-        {isSaving ? <SavingPill /> : <span />}
-        <button
-          type="button"
-          className="flex h-10 w-10 items-center justify-center rounded-full text-zinc-100 transition active:scale-95 active:bg-white/[0.06]"
-          aria-label="Rest timer"
-        >
-          <TimerIcon className="h-6 w-6" />
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            if (isFinishing) {
-              return;
-            }
+          <button
+            type="button"
+            onClick={onMinimize}
+            className="-ml-2 flex h-10 w-10 items-center justify-center rounded-full text-zinc-100 transition active:scale-95 active:bg-white/[0.06]"
+            aria-label="Minimize live workout"
+          >
+            <ChevronDownIcon className="h-7 w-7" />
+          </button>
+          <h1
+            className={`min-w-0 truncate text-xl font-semibold tracking-normal text-white ${TOP_BAR_TITLE_CLASS}`}
+          >
+            Log Workout
+          </h1>
+          {isSaving ? <SavingPill /> : <span />}
+          <button
+            type="button"
+            className="flex h-10 w-10 items-center justify-center rounded-full text-zinc-100 transition active:scale-95 active:bg-white/[0.06]"
+            aria-label="Rest timer"
+          >
+            <TimerIcon className="h-6 w-6" />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (isFinishing) {
+                return;
+              }
 
-            if (isSyncBusy) {
-              onSyncBusyTap();
-              return;
-            }
+              if (isSyncBusy) {
+                onSyncBusyTap();
+                return;
+              }
 
-            onFinish();
-          }}
-          aria-disabled={isFinishUnavailable}
-          className={
-            isFinishUnavailable
-              ? "h-10 cursor-not-allowed rounded-xl bg-zinc-700 px-4 text-sm font-bold text-zinc-300 transition"
-              : "h-10 rounded-xl bg-emerald-500 px-4 text-sm font-bold text-white shadow-lg shadow-emerald-950/40 transition active:scale-[0.99]"
-          }
-        >
-          {isFinishing ? "Finishing" : "Finish"}
-        </button>
+              onFinish();
+            }}
+            aria-disabled={isFinishUnavailable}
+            className={
+              isFinishUnavailable
+                ? "inline-flex h-10 cursor-not-allowed items-center justify-center rounded-xl bg-zinc-700 px-4 text-sm font-bold leading-none text-zinc-300 transition"
+                : "inline-flex h-10 items-center justify-center rounded-xl bg-emerald-500 px-4 text-sm font-bold leading-none text-white shadow-lg shadow-emerald-950/40 transition active:scale-[0.99]"
+            }
+          >
+            {isFinishing ? "Finishing" : "Finish"}
+          </button>
+        </div>
       </div>
 
       {failedSaveCount > 0 ? (

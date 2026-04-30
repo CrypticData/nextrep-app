@@ -135,7 +135,7 @@ export function MeasuresApp() {
         <button
           type="button"
           onClick={() => setModalMode({ kind: "create" })}
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-950/50 transition active:scale-95"
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-950/50 transition active:scale-95"
           aria-label="Add bodyweight"
         >
           <PlusIcon className="h-5 w-5" />

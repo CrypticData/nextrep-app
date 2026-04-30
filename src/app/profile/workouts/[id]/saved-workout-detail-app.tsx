@@ -159,7 +159,7 @@ export function SavedWorkoutDetailApp({ workoutId }: { workoutId: string }) {
         <button
           type="button"
           onClick={() => setIsActionsOpen(true)}
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-white/[0.06] text-zinc-200 transition active:scale-95"
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.06] text-zinc-200 transition active:scale-95"
           aria-label="Workout actions"
         >
           <EditIcon className="h-5 w-5" />

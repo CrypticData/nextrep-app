@@ -482,7 +482,7 @@ export function EditWorkoutApp({ workoutId }: { workoutId: string }) {
                 type="button"
                 onClick={() => router.push(detailHref)}
                 disabled={isSaving}
-                className="-ml-2 rounded-xl px-2 py-2 text-sm font-semibold text-zinc-300 transition active:scale-95 disabled:cursor-wait disabled:opacity-50"
+                className="-ml-2 inline-flex h-10 items-center justify-center rounded-xl px-2 text-sm font-semibold leading-none text-zinc-300 transition active:scale-95 disabled:cursor-wait disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -492,7 +492,7 @@ export function EditWorkoutApp({ workoutId }: { workoutId: string }) {
                 type="button"
                 onClick={() => void handleSave()}
                 disabled={isSaving}
-                className="h-10 rounded-xl bg-emerald-500 px-4 text-sm font-bold text-white shadow-lg shadow-emerald-950/40 transition active:scale-[0.99] disabled:cursor-wait disabled:bg-zinc-700 disabled:text-zinc-300"
+                className="inline-flex h-10 items-center justify-center rounded-xl bg-emerald-500 px-4 text-sm font-bold leading-none text-white shadow-lg shadow-emerald-950/40 transition active:scale-[0.99] disabled:cursor-wait disabled:bg-zinc-700 disabled:text-zinc-300"
               >
                 {isSaving ? "Saving" : "Save"}
               </button>

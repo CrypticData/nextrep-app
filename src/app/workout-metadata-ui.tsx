@@ -7,6 +7,11 @@ import {
   MAX_WORKOUT_DURATION_MINUTES,
   durationInputsToSeconds,
 } from "@/lib/workout-duration";
+import {
+  TOP_BAR_BORDER_CLASS,
+  TOP_BAR_ROW_CLASS,
+  TOP_BAR_TITLE_CLASS,
+} from "./top-bar";
 
 const ROW_HEIGHT = 40;
 const VISIBLE_ROWS = 3;
@@ -45,16 +50,22 @@ export function WorkoutMetadataHeader({
   title: string;
 }) {
   return (
-    <div className="sticky top-0 z-30 -mx-5 -mt-px bg-[#101010]">
-      <div className="relative flex min-h-[56px] items-center justify-between border-b border-white/10 bg-[#181818] px-5 py-2">
-        <div className="z-10 flex min-w-[72px] items-center justify-start">
-          {left}
-        </div>
-        <h1 className="pointer-events-none absolute left-1/2 max-w-[52%] -translate-x-1/2 truncate text-center text-lg font-semibold tracking-normal text-white">
-          {title}
-        </h1>
-        <div className="z-10 flex min-w-[72px] items-center justify-end">
-          {right}
+    <div className="sticky top-0 z-30 -mx-5 -mt-px bg-[#101010] pt-[var(--safe-area-top)]">
+      <div className={`bg-[#181818] ${TOP_BAR_BORDER_CLASS}`}>
+        <div
+          className={`relative flex justify-between px-5 ${TOP_BAR_ROW_CLASS}`}
+        >
+          <div className="z-10 flex min-w-[72px] items-center justify-start">
+            {left}
+          </div>
+          <h1
+            className={`pointer-events-none absolute left-1/2 top-1/2 max-w-[52%] -translate-x-1/2 -translate-y-1/2 truncate text-center text-lg font-semibold tracking-normal text-white ${TOP_BAR_TITLE_CLASS}`}
+          >
+            {title}
+          </h1>
+          <div className="z-10 flex min-w-[72px] items-center justify-end">
+            {right}
+          </div>
         </div>
       </div>
     </div>

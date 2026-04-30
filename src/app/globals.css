@@ -53,7 +53,7 @@ select {
 }
 
 .safe-header {
-  padding-top: calc(1.5rem + var(--safe-area-top));
+  padding-top: var(--safe-area-top);
   padding-left: calc(1.25rem + var(--safe-area-left));
   padding-right: calc(1.25rem + var(--safe-area-right));
 }

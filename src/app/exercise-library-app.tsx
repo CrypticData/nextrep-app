@@ -344,7 +344,7 @@ export function ExerciseLibraryApp({
             <button
               type="button"
               onClick={() => setIsExerciseActionsOpen(true)}
-              className="flex h-11 w-11 items-center justify-center rounded-full bg-white/[0.06] text-zinc-200 transition active:scale-95"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.06] text-zinc-200 transition active:scale-95"
               aria-label="Exercise actions"
             >
               <MoreIcon className="h-5 w-5" />
@@ -353,7 +353,7 @@ export function ExerciseLibraryApp({
             <button
               type="button"
               onClick={() => setModalMode({ kind: "create" })}
-              className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-950/50 transition active:scale-95 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-950/50 transition active:scale-95 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
               disabled={
                 equipmentTypes.length === 0 || muscleGroups.length === 0
               }
