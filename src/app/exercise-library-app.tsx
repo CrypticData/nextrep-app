@@ -877,7 +877,7 @@ function ExerciseFilterSheet({
         className="absolute inset-0 cursor-default"
         onClick={onClose}
       />
-      <section className="safe-sheet-panel relative flex max-h-[90dvh] w-full max-w-md flex-col rounded-t-[28px] border border-white/10 bg-[#141414] shadow-2xl shadow-black">
+      <section className="safe-sheet-panel relative flex h-[50dvh] w-full max-w-md flex-col rounded-t-[28px] border border-white/10 bg-[#141414] shadow-2xl shadow-black">
         <div className="flex justify-center px-5 py-3">
           <div className="h-1 w-10 rounded-full bg-white/20" />
         </div>
