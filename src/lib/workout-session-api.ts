@@ -243,55 +243,39 @@ export async function discardInvalidSets(id: string) {
     return { kind: "invalid_id" as const };
   }
 
-  try {
-    return await prisma.$transaction(async (tx) => {
-      const session = await tx.workoutSession.findUnique({
-        where: { id },
-        select: { status: true },
-      });
-
-      if (!session) {
-        return { kind: "not_found" as const };
-      }
-
-      if (session.status !== "active") {
-        return { kind: "not_active" as const };
-      }
-
-      const affectedExercises = await findExercisesWithInvalidWeightedSets(
-        id,
-        tx,
-      );
-
-      if (affectedExercises.length === 0) {
-        return { kind: "ok" as const, deletedCount: 0 };
-      }
-
-      const deleted = await tx.workoutSet.deleteMany({
-        where: invalidWeightedSetWhere(id),
-      });
-
-      for (const workoutSessionExerciseId of affectedExercises) {
-        const reindexResult = await reindexWorkoutExerciseSets(
-          tx,
-          workoutSessionExerciseId,
-          { promoteOrphanedDrops: true },
-        );
-
-        if (!reindexResult.ok) {
-          throw new InvalidDropSetReindexError();
-        }
-      }
-
-      return { kind: "ok" as const, deletedCount: deleted.count };
+  return prisma.$transaction(async (tx) => {
+    const session = await tx.workoutSession.findUnique({
+      where: { id },
+      select: { status: true },
     });
-  } catch (error) {
-    if (error instanceof InvalidDropSetReindexError) {
-      return { kind: "invalid_drop_set" as const };
+
+    if (!session) {
+      return { kind: "not_found" as const };
     }
 
-    throw error;
-  }
+    if (session.status !== "active") {
+      return { kind: "not_active" as const };
+    }
+
+    const affectedExercises = await findExercisesWithInvalidWeightedSets(
+      id,
+      tx,
+    );
+
+    if (affectedExercises.length === 0) {
+      return { kind: "ok" as const, deletedCount: 0 };
+    }
+
+    const deleted = await tx.workoutSet.deleteMany({
+      where: invalidWeightedSetWhere(id),
+    });
+
+    for (const workoutSessionExerciseId of affectedExercises) {
+      await reindexWorkoutExerciseSets(tx, workoutSessionExerciseId);
+    }
+
+    return { kind: "ok" as const, deletedCount: deleted.count };
+  });
 }
 
 export function parseFinishWorkoutBody(value: unknown):
@@ -371,112 +355,96 @@ export async function finishWorkout(id: string, payload: FinishWorkoutPayload) {
     return { kind: "invalid_id" as const };
   }
 
-  try {
-    return await prisma.$transaction(async (tx) => {
-      const session = await tx.workoutSession.findUnique({
-        where: { id },
-        select: { status: true },
-      });
-
-      if (!session) {
-        return { kind: "not_found" as const };
-      }
-
-      if (session.status !== "active") {
-        return { kind: "not_active" as const };
-      }
-
-      const validation = await validateFinishWorkout(id, tx);
-
-      if (validation.kind === "invalid_weighted_sets") {
-        return {
-          kind: "invalid_weighted_sets" as const,
-          invalidSetCount: validation.invalidSetCount,
-        };
-      }
-
-      if (validation.kind === "no_recorded_sets") {
-        return { kind: "no_recorded_sets" as const };
-      }
-
-      if (validation.kind !== "ok") {
-        return { kind: validation.kind };
-      }
-
-      const affectedExercises = await findExercisesWithEmptySets(id, tx);
-
-      if (affectedExercises.length > 0) {
-        await tx.workoutSet.deleteMany({
-          where: emptySetWhere(id),
-        });
-
-        for (const workoutSessionExerciseId of affectedExercises) {
-          const reindexResult = await reindexWorkoutExerciseSets(
-            tx,
-            workoutSessionExerciseId,
-            { promoteOrphanedDrops: true },
-          );
-
-          if (!reindexResult.ok) {
-            throw new InvalidDropSetReindexError();
-          }
-        }
-      }
-
-      const endedAt = new Date(
-        payload.startedAt.getTime() + payload.durationSeconds * 1000,
-      );
-
-      const restDefaults = await tx.workoutSessionExercise.findMany({
-        where: {
-          workoutSessionId: id,
-          exerciseId: { not: null },
-        },
-        select: {
-          exerciseId: true,
-          restSeconds: true,
-        },
-      });
-
-      for (const restDefault of restDefaults) {
-        if (!restDefault.exerciseId) {
-          continue;
-        }
-
-        await tx.exercise.update({
-          where: { id: restDefault.exerciseId },
-          data: { defaultRestSeconds: restDefault.restSeconds },
-          select: { id: true },
-        });
-      }
-
-      const completedSession = await tx.workoutSession.update({
-        where: { id },
-        data: {
-          name: payload.name,
-          description: payload.description,
-          startedAt: payload.startedAt,
-          endedAt,
-          status: "completed",
-          activeRestStartedAt: null,
-          activeRestDurationSeconds: null,
-          activeRestWorkoutSessionExerciseId: null,
-        },
-        select: workoutSessionSelect,
-      });
-
-      return {
-        kind: "ok" as const,
-        session: await toWorkoutSessionResponse(completedSession, tx),
-      };
+  return prisma.$transaction(async (tx) => {
+    const session = await tx.workoutSession.findUnique({
+      where: { id },
+      select: { status: true },
     });
-  } catch (error) {
-    if (error instanceof InvalidDropSetReindexError) {
-      return { kind: "invalid_drop_set" as const };
+
+    if (!session) {
+      return { kind: "not_found" as const };
     }
 
-    throw error;
-  }
+    if (session.status !== "active") {
+      return { kind: "not_active" as const };
+    }
+
+    const validation = await validateFinishWorkout(id, tx);
+
+    if (validation.kind === "invalid_weighted_sets") {
+      return {
+        kind: "invalid_weighted_sets" as const,
+        invalidSetCount: validation.invalidSetCount,
+      };
+    }
+
+    if (validation.kind === "no_recorded_sets") {
+      return { kind: "no_recorded_sets" as const };
+    }
+
+    if (validation.kind !== "ok") {
+      return { kind: validation.kind };
+    }
+
+    const affectedExercises = await findExercisesWithEmptySets(id, tx);
+
+    if (affectedExercises.length > 0) {
+      await tx.workoutSet.deleteMany({
+        where: emptySetWhere(id),
+      });
+
+      for (const workoutSessionExerciseId of affectedExercises) {
+        await reindexWorkoutExerciseSets(tx, workoutSessionExerciseId);
+      }
+    }
+
+    const endedAt = new Date(
+      payload.startedAt.getTime() + payload.durationSeconds * 1000,
+    );
+
+    const restDefaults = await tx.workoutSessionExercise.findMany({
+      where: {
+        workoutSessionId: id,
+        exerciseId: { not: null },
+      },
+      select: {
+        exerciseId: true,
+        restSeconds: true,
+      },
+    });
+
+    for (const restDefault of restDefaults) {
+      if (!restDefault.exerciseId) {
+        continue;
+      }
+
+      await tx.exercise.update({
+        where: { id: restDefault.exerciseId },
+        data: { defaultRestSeconds: restDefault.restSeconds },
+        select: { id: true },
+      });
+    }
+
+    const completedSession = await tx.workoutSession.update({
+      where: { id },
+      data: {
+        name: payload.name,
+        description: payload.description,
+        startedAt: payload.startedAt,
+        endedAt,
+        status: "completed",
+        activeRestStartedAt: null,
+        activeRestDurationSeconds: null,
+        activeRestWorkoutSessionExerciseId: null,
+      },
+      select: workoutSessionSelect,
+    });
+
+    return {
+      kind: "ok" as const,
+      session: await toWorkoutSessionResponse(completedSession, tx),
+    };
+  });
 }
 
 export function parseStartRestBody(value: unknown):
@@ -742,5 +710,3 @@ function emptySetWhere(workoutSessionId: string): Prisma.WorkoutSetWhereInput {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-
-class InvalidDropSetReindexError extends Error {}

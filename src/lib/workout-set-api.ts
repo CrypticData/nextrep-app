@@ -197,10 +197,6 @@ export async function updateActiveWorkoutSet(
     }));
     const numbering = recalculateSetNumbering(setTypesAfterUpdate);
 
-    if (!numbering.ok) {
-      return { kind: "invalid_drop_set" as const };
-    }
-
     if (
       storesInputWeightUnit(exerciseType) &&
       input.weightInputUnit &&
@@ -227,7 +223,7 @@ export async function updateActiveWorkoutSet(
       });
     }
 
-    for (const setNumbering of numbering.data) {
+    for (const setNumbering of numbering) {
       const isTargetSet = setNumbering.id === existingSet.id;
 
       await tx.workoutSet.update({
@@ -235,7 +231,6 @@ export async function updateActiveWorkoutSet(
           data: {
             ...(isTargetSet ? buildSetUpdateData(existingSet, input, effectiveWeight) : {}),
             setNumber: setNumbering.setNumber,
-            parentSetId: setNumbering.parentSetId,
           },
           select: { id: true },
         });
@@ -359,10 +354,6 @@ export async function deleteActiveWorkoutSet(workoutSetId: string) {
     });
     const numbering = recalculateSetNumbering(remainingSets);
 
-    if (!numbering.ok) {
-      return { kind: "invalid_drop_set" as const };
-    }
-
     await tx.workoutSet.delete({
       where: { id: existingSet.id },
       select: { id: true },
@@ -383,14 +374,13 @@ export async function deleteActiveWorkoutSet(workoutSetId: string) {
     }
 
     for (const [index, set] of remainingSets.entries()) {
-      const setNumbering = numbering.data[index];
+      const setNumbering = numbering[index];
 
       await tx.workoutSet.update({
         where: { id: set.id },
         data: {
           rowIndex: index + 1,
           setNumber: setNumbering.setNumber,
-          parentSetId: setNumbering.parentSetId,
         },
         select: { id: true },
       });
@@ -413,7 +403,6 @@ export async function deleteActiveWorkoutSet(workoutSetId: string) {
 export async function reindexWorkoutExerciseSets(
   tx: Prisma.TransactionClient,
   workoutSessionExerciseId: string,
-  options: { promoteOrphanedDrops?: boolean } = {},
 ) {
   const sets = await tx.workoutSet.findMany({
     where: { workoutSessionExerciseId },
@@ -424,11 +413,7 @@ export async function reindexWorkoutExerciseSets(
       setType: true,
     },
   });
-  const numbering = recalculateSetNumbering(sets, options);
-
-  if (!numbering.ok) {
-    return { ok: false as const };
-  }
+  const numbering = recalculateSetNumbering(sets);
 
   const rowIndexOffset =
     sets.reduce((maxRowIndex, set) => Math.max(maxRowIndex, set.rowIndex), 0) +
@@ -443,21 +428,17 @@ export async function reindexWorkoutExerciseSets(
   }
 
   for (const [index, set] of sets.entries()) {
-    const setNumbering = numbering.data[index];
+    const setNumbering = numbering[index];
 
     await tx.workoutSet.update({
       where: { id: set.id },
       data: {
         rowIndex: index + 1,
         setNumber: setNumbering.setNumber,
-        parentSetId: setNumbering.parentSetId,
-        ...(setNumbering.setType ? { setType: setNumbering.setType } : {}),
       },
       select: { id: true },
     });
   }
-
-  return { ok: true as const };
 }
 
 export { toWorkoutSetResponse };
@@ -660,63 +641,23 @@ async function findLatestBodyweightInUnit(
 
 function recalculateSetNumbering(
   sets: Array<{ id: string; setType: WorkoutSetType }>,
-  options: { promoteOrphanedDrops?: boolean } = {},
-):
-  | {
-      ok: true;
-      data: SetNumberingResult[];
-    }
-  | { ok: false } {
+): SetNumberingResult[] {
   let nextSetNumber = 1;
-  let lastNumberedSetId: string | null = null;
-  const data: SetNumberingResult[] = [];
 
-  for (const set of sets) {
-    if (set.setType === "warmup") {
-      data.push({ id: set.id, setNumber: null, parentSetId: null });
-      continue;
-    }
-
-    if (set.setType === "drop") {
-      if (!lastNumberedSetId) {
-        if (!options.promoteOrphanedDrops) {
-          return { ok: false };
-        }
-
-        const setNumber = nextSetNumber;
-        nextSetNumber += 1;
-        lastNumberedSetId = set.id;
-        data.push({
-          id: set.id,
-          setNumber,
-          parentSetId: null,
-          setType: "normal",
-        });
-        continue;
-      }
-
-      data.push({
-        id: set.id,
-        setNumber: null,
-        parentSetId: lastNumberedSetId,
-      });
-      continue;
+  return sets.map((set) => {
+    if (set.setType === "warmup" || set.setType === "drop") {
+      return { id: set.id, setNumber: null };
     }
 
     const setNumber = nextSetNumber;
     nextSetNumber += 1;
-    lastNumberedSetId = set.id;
-    data.push({ id: set.id, setNumber, parentSetId: null });
-  }
-
-  return { ok: true, data };
+    return { id: set.id, setNumber };
+  });
 }
 
 type SetNumberingResult = {
   id: string;
   setNumber: number | null;
-  parentSetId: string | null;
-  setType?: "normal";
 };
 
 function readNullableDecimal(

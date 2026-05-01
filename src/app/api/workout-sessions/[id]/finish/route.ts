@@ -78,12 +78,5 @@ export async function POST(
     );
   }
 
-  if (result.kind === "invalid_drop_set") {
-    return conflict(
-      "This workout has a drop set without a parent set.",
-      "invalid_drop_set",
-    );
-  }
-
   return NextResponse.json(result.session);
 }

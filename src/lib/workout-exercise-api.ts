@@ -16,7 +16,6 @@ export const workoutSetSelect = {
   rowIndex: true,
   setNumber: true,
   setType: true,
-  parentSetId: true,
   reps: true,
   rpe: true,
   checked: true,
@@ -499,11 +498,6 @@ export async function updateWorkoutExerciseWeightUnit(
 
     for (const set of workoutExercise.sets) {
       if (set.weightInputValue === null) {
-        await tx.workoutSet.update({
-          where: { id: set.id },
-          data: { weightInputUnit: weightUnit },
-          select: { id: true },
-        });
         continue;
       }
 
@@ -791,11 +785,11 @@ function buildSeededSetCreateInputs(seedSets: { setType: "normal" | "warmup" | "
   let nextSetNumber = 1;
 
   return seedSets.map((set, index) => {
-    if (set.setType === "warmup") {
+    if (set.setType === "warmup" || set.setType === "drop") {
       return {
         rowIndex: index + 1,
         setNumber: null,
-        setType: "warmup" as const,
+        setType: set.setType,
       };
     }
 
@@ -805,7 +799,7 @@ function buildSeededSetCreateInputs(seedSets: { setType: "normal" | "warmup" | "
     return {
       rowIndex: index + 1,
       setNumber,
-      setType: set.setType === "failure" ? ("failure" as const) : ("normal" as const),
+      setType: set.setType,
     };
   });
 }

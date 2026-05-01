@@ -43,12 +43,5 @@ export async function POST(
     );
   }
 
-  if (result.kind === "invalid_drop_set") {
-    return conflict(
-      "Unfinished rows could not be discarded because a drop set would lose its parent set.",
-      "invalid_drop_set",
-    );
-  }
-
   return NextResponse.json({ deleted_count: result.deletedCount });
 }

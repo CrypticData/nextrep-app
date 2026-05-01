@@ -44,7 +44,6 @@ const completedWorkoutSelect = {
           rowIndex: true,
           setNumber: true,
           setType: true,
-          parentSetId: true,
           reps: true,
           rpe: true,
           checked: true,

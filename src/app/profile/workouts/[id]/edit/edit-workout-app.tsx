@@ -873,7 +873,7 @@ function EditableExerciseCard({
       </div>
 
       <div className="mt-4">
-        <div className="grid grid-cols-[42px_minmax(54px,1fr)_62px_46px_56px_38px] items-center border-y border-white/[0.06] bg-[#101010] px-3 py-2.5 text-[10px] font-bold uppercase tracking-[0.09em] text-zinc-500">
+        <div className="grid grid-cols-[42px_auto_minmax(56px,1fr)_minmax(48px,1fr)_56px_38px] items-center border-y border-white/[0.06] bg-[#101010] px-3 py-2.5 text-[10px] font-bold uppercase tracking-[0.09em] text-zinc-500">
           <span>Set</span>
           <span className="truncate">Previous</span>
           <button
@@ -898,7 +898,6 @@ function EditableExerciseCard({
         {exercise.sets.length > 0 ? (
           exercise.sets.map((set) => (
             <EditableSetRow
-              canSelectDrop={canSelectDropSet(exercise.sets, set.clientId)}
               activeWeightUnit={activeWeightUnit}
               exercise={exercise}
               key={set.clientId}
@@ -990,14 +989,12 @@ function AutosizeNotesTextarea({
 
 function EditableSetRow({
   activeWeightUnit,
-  canSelectDrop,
   exercise,
   onDelete,
   onUpdate,
   set,
 }: {
   activeWeightUnit: WeightUnit;
-  canSelectDrop: boolean;
   exercise: DraftWorkoutExercise;
   onDelete: () => void;
   onUpdate: (patch: Partial<DraftWorkoutSet>) => void;
@@ -1010,7 +1007,7 @@ function EditableSetRow({
 
   return (
     <div className="bg-[#101010]">
-      <div className="grid min-h-[64px] grid-cols-[42px_minmax(54px,1fr)_62px_46px_56px_38px] items-center border-b border-white/[0.05] px-2 py-2.5">
+      <div className="grid min-h-[64px] grid-cols-[42px_auto_minmax(56px,1fr)_minmax(48px,1fr)_56px_38px] items-center border-b border-white/[0.05] px-2 py-2.5">
         <button
           type="button"
           onClick={() => setIsSetTypeSheetOpen(true)}
@@ -1121,7 +1118,6 @@ function EditableSetRow({
 
       {isSetTypeSheetOpen ? (
         <SetTypeSheet
-          canSelectDrop={canSelectDrop}
           currentSetType={set.setType}
           onClose={() => setIsSetTypeSheetOpen(false)}
           onDelete={() => {
@@ -1151,13 +1147,11 @@ function EditableSetRow({
 }
 
 function SetTypeSheet({
-  canSelectDrop,
   currentSetType,
   onClose,
   onDelete,
   onSelect,
 }: {
-  canSelectDrop: boolean;
   currentSetType: SetType;
   onClose: () => void;
   onDelete: () => void;
@@ -1203,44 +1197,25 @@ function SetTypeSheet({
           <div className="space-y-3">
             {options.map((option) => {
               const isSelected = currentSetType === option.value;
-              const isDropDisabled =
-                option.value === "drop" && !canSelectDrop && !isSelected;
 
               return (
                 <button
                   type="button"
                   onClick={() => onSelect(option.value)}
                   key={option.value}
-                  disabled={isDropDisabled}
-                  aria-disabled={isDropDisabled}
                   className={
-                    isDropDisabled
-                      ? "grid min-h-14 w-full cursor-not-allowed grid-cols-[44px_1fr_28px] items-center rounded-2xl border border-white/[0.06] bg-[#171717] px-3 text-left opacity-70"
-                      : isSelected
-                        ? "grid min-h-14 w-full grid-cols-[44px_1fr_28px] items-center rounded-2xl border border-emerald-400/40 bg-emerald-400/10 px-3 text-left transition active:scale-[0.99]"
-                        : "grid min-h-14 w-full grid-cols-[44px_1fr_28px] items-center rounded-2xl border border-white/10 bg-[#232323] px-3 text-left transition active:scale-[0.99]"
+                    isSelected
+                      ? "grid min-h-14 w-full grid-cols-[44px_1fr_28px] items-center rounded-2xl border border-emerald-400/40 bg-emerald-400/10 px-3 text-left transition active:scale-[0.99]"
+                      : "grid min-h-14 w-full grid-cols-[44px_1fr_28px] items-center rounded-2xl border border-white/10 bg-[#232323] px-3 text-left transition active:scale-[0.99]"
                   }
                 >
                   <span
-                    className={`flex h-9 w-9 items-center justify-center rounded-xl bg-black/20 text-base font-bold ${
-                      isDropDisabled ? "text-zinc-600" : option.markerClassName
-                    }`}
+                    className={`flex h-9 w-9 items-center justify-center rounded-xl bg-black/20 text-base font-bold ${option.markerClassName}`}
                   >
                     {option.marker}
                   </span>
-                  <span>
-                    <span
-                      className={`block text-base font-semibold ${
-                        isDropDisabled ? "text-zinc-500" : "text-white"
-                      }`}
-                    >
-                      {option.label}
-                    </span>
-                    {isDropDisabled ? (
-                      <span className="mt-0.5 block text-xs font-semibold text-zinc-600">
-                        Needs a previous working or failure set
-                      </span>
-                    ) : null}
+                  <span className="block text-base font-semibold text-white">
+                    {option.label}
                   </span>
                   {isSelected ? (
                     <CheckIcon className="h-5 w-5 text-emerald-300" />
@@ -1807,78 +1782,41 @@ function renumberExerciseSets(
   options: { preserveUnmatchedPrevious?: boolean } = {},
 ): DraftWorkoutExercise {
   let nextSetNumber = 1;
-  let hasNumberedSet = false;
   let warmupIndex = 1;
-  let activeParentIdentity: string | null = null;
-  const dropIndexByParentIdentity = new Map<string, number>();
+  let dropIndex = 1;
 
   return {
     ...exercise,
     sets: exercise.sets.map((set, index) => {
-      let currentIdentity: string | null = null;
-
       if (set.setType === "warmup") {
-        currentIdentity = `warmup:${warmupIndex}`;
+        const currentIdentity = `warmup:${warmupIndex}`;
         warmupIndex += 1;
 
         return withDraftPrevious(
-          {
-            ...set,
-            rowIndex: index + 1,
-            setNumber: null,
-          },
+          { ...set, rowIndex: index + 1, setNumber: null },
           currentIdentity,
           options,
         );
       }
 
       if (set.setType === "drop") {
-        if (!hasNumberedSet) {
-          hasNumberedSet = true;
-          const setNumber = nextSetNumber;
-          nextSetNumber += 1;
-          activeParentIdentity = `numbered:${setNumber}`;
-
-          return withDraftPrevious(
-            {
-              ...set,
-              rowIndex: index + 1,
-              setNumber,
-              setType: "normal",
-            },
-            activeParentIdentity,
-            options,
-          );
-        }
-
-        const parentIdentity = activeParentIdentity;
-
-        if (parentIdentity) {
-          const dropIndex =
-            (dropIndexByParentIdentity.get(parentIdentity) ?? 0) + 1;
-          dropIndexByParentIdentity.set(parentIdentity, dropIndex);
-          currentIdentity = `drop:${parentIdentity}:${dropIndex}`;
-        }
+        const currentIdentity = `drop:${dropIndex}`;
+        dropIndex += 1;
 
         return withDraftPrevious(
-          {
-            ...set,
-            rowIndex: index + 1,
-            setNumber: null,
-          },
+          { ...set, rowIndex: index + 1, setNumber: null },
           currentIdentity,
           options,
         );
       }
 
-      hasNumberedSet = true;
       const setNumber = nextSetNumber;
       nextSetNumber += 1;
-      activeParentIdentity = `numbered:${setNumber}`;
+      const currentIdentity = `numbered:${setNumber}`;
 
       return withDraftPrevious(
         { ...set, rowIndex: index + 1, setNumber },
-        activeParentIdentity,
+        currentIdentity,
         options,
       );
     }),
@@ -2308,23 +2246,6 @@ function convertDraftSetInputValue(
     fromUnit === "kg" ? parsedValue * LBS_PER_KG : parsedValue / LBS_PER_KG;
 
   return convertedValue.toFixed(2);
-}
-
-function canSelectDropSet(sets: DraftWorkoutSet[], setClientId: string) {
-  const orderedSets = [...sets].sort((first, second) => {
-    return first.rowIndex - second.rowIndex;
-  });
-  const currentSetIndex = orderedSets.findIndex((set) => {
-    return set.clientId === setClientId;
-  });
-
-  if (currentSetIndex <= 0) {
-    return false;
-  }
-
-  return orderedSets
-    .slice(0, currentSetIndex)
-    .some((set) => set.setType === "normal" || set.setType === "failure");
 }
 
 type IconProps = {

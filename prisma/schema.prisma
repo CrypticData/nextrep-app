@@ -178,7 +178,6 @@ model WorkoutSet {
   rowIndex                 Int            @map("row_index")
   setNumber                Int?           @map("set_number")
   setType                  WorkoutSetType @default(normal) @map("set_type")
-  parentSetId              String?        @map("parent_set_id") @db.Uuid
   reps                     Int?
   rpe                      Decimal?       @db.Decimal(3, 1)
   checked                  Boolean        @default(false)
@@ -195,10 +194,7 @@ model WorkoutSet {
   updatedAt                DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   workoutSessionExercise WorkoutSessionExercise @relation(fields: [workoutSessionExerciseId], references: [id], onDelete: Cascade)
-  parentSet              WorkoutSet?            @relation("DropSetParent", fields: [parentSetId], references: [id], onDelete: SetNull)
-  dropSets               WorkoutSet[]           @relation("DropSetParent")
 
   @@unique([workoutSessionExerciseId, rowIndex])
-  @@index([parentSetId])
   @@map("workout_sets")
 }

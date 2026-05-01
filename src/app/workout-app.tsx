@@ -2203,7 +2203,7 @@ function WorkoutExerciseCard({
       </div>
 
       <div>
-        <div className="grid grid-cols-[38px_minmax(54px,1fr)_62px_42px_50px_34px] items-center border-y border-white/[0.06] bg-[#101010] px-2 py-1.5 text-[10px] font-bold uppercase tracking-[0.09em] text-zinc-500">
+        <div className="grid grid-cols-[38px_auto_minmax(56px,1fr)_minmax(48px,1fr)_50px_34px] items-center border-y border-white/[0.06] bg-[#101010] px-2 py-1.5 text-[10px] font-bold uppercase tracking-[0.09em] text-zinc-500">
           <span>Set</span>
           <span className="truncate">Previous</span>
           <button
@@ -2227,7 +2227,6 @@ function WorkoutExerciseCard({
         {workoutExercise.sets.length > 0 ? (
           workoutExercise.sets.map((set) => (
             <WorkoutSetEditorRow
-              canSelectDrop={canSelectDropSet(workoutExercise.sets, set.id)}
               exerciseType={exerciseType}
               inputWeightUnit={workoutExercise.input_weight_unit}
               isDeleting={isSetDeleting(set.id)}
@@ -2377,7 +2376,6 @@ function WorkoutExerciseActionsSheet({
 }
 
 function WorkoutSetEditorRow({
-  canSelectDrop,
   exerciseType,
   inputWeightUnit,
   isDeleting,
@@ -2387,7 +2385,6 @@ function WorkoutSetEditorRow({
   sessionDefaultWeightUnit,
   set,
 }: {
-  canSelectDrop: boolean;
   exerciseType: ExerciseType;
   inputWeightUnit: "lbs" | "kg" | null;
   isDeleting: boolean;
@@ -2458,7 +2455,7 @@ function WorkoutSetEditorRow({
 
   return (
     <div className={`bg-[#101010] ${savingTone}`}>
-      <div className="grid min-h-[52px] grid-cols-[38px_minmax(54px,1fr)_62px_42px_50px_34px] items-center border-b border-white/[0.05] px-2 py-1.5">
+      <div className="grid min-h-[52px] grid-cols-[38px_auto_minmax(56px,1fr)_minmax(48px,1fr)_50px_34px] items-center border-b border-white/[0.05] px-2 py-1.5">
         <button
           type="button"
           onClick={() => setIsSetTypeSheetOpen(true)}
@@ -2588,7 +2585,6 @@ function WorkoutSetEditorRow({
 
       {isSetTypeSheetOpen ? (
         <SetTypeSheet
-          canSelectDrop={canSelectDrop}
           currentSetType={set.set_type}
           isDeleting={isDeleting}
           onClose={() => setIsSetTypeSheetOpen(false)}
@@ -2615,14 +2611,12 @@ function WorkoutSetEditorRow({
 }
 
 function SetTypeSheet({
-  canSelectDrop,
   currentSetType,
   isDeleting,
   onClose,
   onDelete,
   onSelect,
 }: {
-  canSelectDrop: boolean;
   currentSetType: WorkoutSet["set_type"];
   isDeleting: boolean;
   onClose: () => void;
@@ -2669,44 +2663,25 @@ function SetTypeSheet({
           <div className="space-y-3">
             {options.map((option) => {
               const isSelected = currentSetType === option.value;
-              const isDropDisabled =
-                option.value === "drop" && !canSelectDrop && !isSelected;
 
               return (
                 <button
                   type="button"
                   onClick={() => onSelect(option.value)}
                   key={option.value}
-                  disabled={isDropDisabled}
-                  aria-disabled={isDropDisabled}
                   className={
-                    isDropDisabled
-                      ? "grid min-h-14 w-full cursor-not-allowed grid-cols-[44px_1fr_28px] items-center rounded-2xl border border-white/[0.06] bg-[#171717] px-3 text-left opacity-70"
-                      : isSelected
-                        ? "grid min-h-14 w-full grid-cols-[44px_1fr_28px] items-center rounded-2xl border border-emerald-400/40 bg-emerald-400/10 px-3 text-left transition active:scale-[0.99]"
-                        : "grid min-h-14 w-full grid-cols-[44px_1fr_28px] items-center rounded-2xl border border-white/10 bg-[#232323] px-3 text-left transition active:scale-[0.99]"
+                    isSelected
+                      ? "grid min-h-14 w-full grid-cols-[44px_1fr_28px] items-center rounded-2xl border border-emerald-400/40 bg-emerald-400/10 px-3 text-left transition active:scale-[0.99]"
+                      : "grid min-h-14 w-full grid-cols-[44px_1fr_28px] items-center rounded-2xl border border-white/10 bg-[#232323] px-3 text-left transition active:scale-[0.99]"
                   }
                 >
                   <span
-                    className={`flex h-9 w-9 items-center justify-center rounded-xl bg-black/20 text-base font-bold ${
-                      isDropDisabled ? "text-zinc-600" : option.markerClassName
-                    }`}
+                    className={`flex h-9 w-9 items-center justify-center rounded-xl bg-black/20 text-base font-bold ${option.markerClassName}`}
                   >
                     {option.marker}
                   </span>
-                  <span>
-                    <span
-                      className={`block text-base font-semibold ${
-                        isDropDisabled ? "text-zinc-500" : "text-white"
-                      }`}
-                    >
-                      {option.label}
-                    </span>
-                    {isDropDisabled ? (
-                      <span className="mt-0.5 block text-xs font-semibold text-zinc-600">
-                        Needs a previous working or failure set
-                      </span>
-                    ) : null}
+                  <span className="block text-base font-semibold text-white">
+                    {option.label}
                   </span>
                   {isSelected ? (
                     <CheckIcon className="h-5 w-5 text-emerald-300" />
@@ -3489,19 +3464,6 @@ function getWorkoutSummary(
     volumeValue,
     volumeUnit: defaultWeightUnit,
   };
-}
-
-function canSelectDropSet(sets: WorkoutSet[], setId: string) {
-  const orderedSets = sortWorkoutSets(sets);
-  const currentSetIndex = orderedSets.findIndex((set) => set.id === setId);
-
-  if (currentSetIndex <= 0) {
-    return false;
-  }
-
-  return orderedSets
-    .slice(0, currentSetIndex)
-    .some((set) => set.set_type === "normal" || set.set_type === "failure");
 }
 
 function formatVolumeSummary(value: number, unit: "lbs" | "kg") {

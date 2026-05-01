@@ -104,11 +104,6 @@ type EffectiveWeight = {
   volumeUnit: WeightUnit | null;
 };
 
-type PersistedSet = {
-  id: string;
-  setType: WorkoutSetType;
-};
-
 const workoutSetTypes = new Set<string>([
   "normal",
   "warmup",
@@ -732,7 +727,6 @@ async function persistWorkoutSets(
   });
 
   const numberedSets = recalculateSetNumbering(retainedSetInputs);
-  const persistedSets: PersistedSet[] = [];
 
   for (const [index, setInput] of retainedSetInputs.entries()) {
     const existingSet = setInput.id
@@ -756,7 +750,6 @@ async function persistWorkoutSets(
       rowIndex: index + 1,
       setNumber: setNumbering.setNumber,
       setType: setNumbering.setType,
-      parentSetId: null,
       reps: setInput.reps,
       rpe: setInput.rpe,
       checked: setInput.checked,
@@ -779,28 +772,13 @@ async function persistWorkoutSets(
         data: setData,
         select: { id: true },
       });
-      persistedSets.push({ id: setInput.id, setType: setNumbering.setType });
       continue;
     }
 
-    const createdSet = await tx.workoutSet.create({
+    await tx.workoutSet.create({
       data: {
         ...setData,
         workoutSessionExerciseId,
-      },
-      select: { id: true },
-    });
-
-    persistedSets.push({ id: createdSet.id, setType: setNumbering.setType });
-  }
-
-  const parentUpdates = recalculateSetNumbering(persistedSets);
-
-  for (const [index, set] of persistedSets.entries()) {
-    await tx.workoutSet.update({
-      where: { id: set.id },
-      data: {
-        parentSetId: parentUpdates[index].parentSetId,
       },
       select: { id: true },
     });
@@ -957,52 +935,27 @@ function recalculateSetNumbering(
   sets: Array<{ id?: string | null; setType: WorkoutSetType }>,
 ) {
   let nextSetNumber = 1;
-  let lastNumberedIndex: number | null = null;
 
-  return sets.map((set, index) => {
-    if (set.setType === "warmup") {
+  return sets.map((set) => {
+    if (set.setType === "warmup" || set.setType === "drop") {
       return {
         setType: set.setType,
         setNumber: null,
-        parentSetId: null,
-      };
-    }
-
-    if (set.setType === "drop") {
-      if (lastNumberedIndex === null) {
-        const setNumber = nextSetNumber;
-        nextSetNumber += 1;
-        lastNumberedIndex = index;
-
-        return {
-          setType: "normal" as const,
-          setNumber,
-          parentSetId: null,
-        };
-      }
-
-      return {
-        setType: set.setType,
-        setNumber: null,
-        parentSetId: sets[lastNumberedIndex].id ?? null,
       };
     }
 
     const setNumber = nextSetNumber;
     nextSetNumber += 1;
-    lastNumberedIndex = index;
 
     return {
       setType: set.setType,
       setNumber,
-      parentSetId: null,
     };
   });
 }
 
 function buildPreviewWorkoutSets(sets: PreviewWorkoutSetInput[]) {
   let nextSetNumber = 1;
-  let lastNumberedClientId: string | null = null;
 
   return sets.map((set, index) => {
     const baseSet = {
@@ -1015,46 +968,21 @@ function buildPreviewWorkoutSets(sets: PreviewWorkoutSetInput[]) {
       weightNormalizedUnit: null,
     };
 
-    if (set.setType === "warmup") {
+    if (set.setType === "warmup" || set.setType === "drop") {
       return {
         ...baseSet,
         setNumber: null,
-        setType: "warmup" as const,
-        parentSetId: null,
-      };
-    }
-
-    if (set.setType === "drop") {
-      if (!lastNumberedClientId) {
-        const setNumber = nextSetNumber;
-        nextSetNumber += 1;
-        lastNumberedClientId = set.clientId;
-
-        return {
-          ...baseSet,
-          setNumber,
-          setType: "normal" as const,
-          parentSetId: null,
-        };
-      }
-
-      return {
-        ...baseSet,
-        setNumber: null,
-        setType: "drop" as const,
-        parentSetId: lastNumberedClientId,
+        setType: set.setType,
       };
     }
 
     const setNumber = nextSetNumber;
     nextSetNumber += 1;
-    lastNumberedClientId = set.clientId;
 
     return {
       ...baseSet,
       setNumber,
       setType: set.setType,
-      parentSetId: null,
     };
   });
 }

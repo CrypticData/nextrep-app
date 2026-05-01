@@ -18,7 +18,6 @@ export type PreviousWorkoutSet = {
   rowIndex: number;
   setNumber: number | null;
   setType: WorkoutSetType;
-  parentSetId: string | null;
   reps: number | null;
   weightInputValue: Prisma.Decimal | null;
   weightInputUnit: WeightUnit | null;
@@ -68,7 +67,6 @@ const previousWorkoutSessionSelect = {
           rowIndex: true,
           setNumber: true,
           setType: true,
-          parentSetId: true,
           reps: true,
           weightInputValue: true,
           weightInputUnit: true,
@@ -184,25 +182,7 @@ export async function findTemplateSeedSetsForFirstOccurrence({
       continue;
     }
 
-    let hasNumberedSet = false;
-
-    return firstOccurrence.sets.map((set) => {
-      if (set.setType === "normal" || set.setType === "failure") {
-        hasNumberedSet = true;
-        return { setType: set.setType };
-      }
-
-      if (set.setType === "drop") {
-        if (!hasNumberedSet) {
-          hasNumberedSet = true;
-          return { setType: "normal" };
-        }
-
-        return { setType: "normal" };
-      }
-
-      return { setType: "warmup" };
-    });
+    return firstOccurrence.sets.map((set) => ({ setType: set.setType }));
   }
 
   return [];
@@ -226,8 +206,8 @@ export function getOriginalSavedPreviousValue({
 
 export function computeDisplayedSetIdentities(sets: PreviousWorkoutSet[]) {
   const identities = new Map<string, DisplayedSetIdentity>();
-  const dropCountsByParentIdentity = new Map<DisplayedSetIdentity, number>();
   let warmupIndex = 1;
+  let dropIndex = 1;
 
   for (const set of sets) {
     if (set.setType === "warmup") {
@@ -237,20 +217,8 @@ export function computeDisplayedSetIdentities(sets: PreviousWorkoutSet[]) {
     }
 
     if (set.setType === "drop") {
-      if (!set.parentSetId) {
-        continue;
-      }
-
-      const parentIdentity = identities.get(set.parentSetId);
-
-      if (!parentIdentity) {
-        continue;
-      }
-
-      const dropIndex =
-        (dropCountsByParentIdentity.get(parentIdentity) ?? 0) + 1;
-      dropCountsByParentIdentity.set(parentIdentity, dropIndex);
-      identities.set(set.id, `drop:${parentIdentity}:${dropIndex}`);
+      identities.set(set.id, `drop:${dropIndex}`);
+      dropIndex += 1;
       continue;
     }
 

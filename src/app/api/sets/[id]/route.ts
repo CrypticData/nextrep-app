@@ -63,12 +63,6 @@ export async function PATCH(
     return notFound();
   }
 
-  if (result.kind === "invalid_drop_set") {
-    return badRequest(
-      "Drop sets must come after a normal or failure set in the same exercise.",
-    );
-  }
-
   if (result.kind === "assistance_exceeds_bodyweight") {
     return badRequest("Assisted weight cannot exceed current bodyweight.");
   }
@@ -102,12 +96,6 @@ export async function DELETE(
 
   if (result.kind === "set_not_found") {
     return notFound();
-  }
-
-  if (result.kind === "invalid_drop_set") {
-    return badRequest(
-      "Drop sets must come after a normal or failure set in the same exercise.",
-    );
   }
 
   const contextResult = await findActiveWorkoutExerciseResponseContext(
