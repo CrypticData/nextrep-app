@@ -384,9 +384,13 @@ function toPreviousValue({
         : new Prisma.Decimal(0);
 
   return {
-    weight: weight.toFixed(2),
+    weight: formatWeightForDisplay(weight),
     reps: historicalSet.reps,
   };
+}
+
+function formatWeightForDisplay(weight: Prisma.Decimal) {
+  return weight.toFixed(2).replace(/\.?0+$/, "");
 }
 
 type PendingPrevious = {

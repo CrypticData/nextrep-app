@@ -30,8 +30,6 @@ import {
   WorkoutMetadataSection,
 } from "@/app/workout-metadata-ui";
 import {
-  MAX_WORKOUT_DURATION_SECONDS,
-  durationInputsToSeconds,
   formatRoundedDuration,
   toVisibleDurationParts,
 } from "@/lib/workout-duration";
@@ -43,6 +41,17 @@ import {
   hasWeightInput,
 } from "@/lib/exercise-type";
 import { formatSetLabel, getSetLabelClassName } from "@/lib/set-display";
+import {
+  LBS_PER_KG,
+  formatPreviousValue,
+  formatVolumeSummary,
+  getDurationSecondsFromInputs,
+  getErrorMessage,
+  normalizeNullableText,
+  readLocalDateTimeInput,
+  toLocalDateTimeInputValue,
+} from "@/lib/workout-formatting";
+import type { PreviousValue } from "@/lib/workout-formatting";
 
 type WeightUnit = "lbs" | "kg";
 type SetType = "normal" | "warmup" | "failure" | "drop";
@@ -111,11 +120,6 @@ type CompletedWorkoutSet = {
   previous: PreviousValue | null;
 };
 
-type PreviousValue = {
-  weight: string | null;
-  reps: number | null;
-};
-
 type PreviousPreviewResponse = {
   sets: Array<{
     client_id: string;
@@ -181,8 +185,6 @@ type SortableHandleProps = {
   listeners: ReturnType<typeof useSortable>["listeners"];
   setActivatorNodeRef: ReturnType<typeof useSortable>["setActivatorNodeRef"];
 };
-
-const LBS_PER_KG = 2.2046226218;
 
 let nextDraftId = 0;
 
@@ -873,8 +875,8 @@ function EditableExerciseCard({
       </div>
 
       <div className="mt-4">
-        <div className="grid grid-cols-[42px_auto_minmax(56px,1fr)_minmax(48px,1fr)_56px_38px] items-center border-y border-white/[0.06] bg-[#101010] px-3 py-2.5 text-[10px] font-bold uppercase tracking-[0.09em] text-zinc-500">
-          <span>Set</span>
+        <div className="grid gap-x-1.5 grid-cols-[40px_minmax(64px,1fr)_minmax(56px,1fr)_minmax(48px,1fr)_52px_36px] items-center border-y border-white/[0.06] bg-[#101010] px-3 py-2.5 text-[10px] font-bold uppercase tracking-[0.09em] text-zinc-500">
+          <span className="text-center">Set</span>
           <span className="truncate">Previous</span>
           <button
             type="button"
@@ -1007,7 +1009,7 @@ function EditableSetRow({
 
   return (
     <div className="bg-[#101010]">
-      <div className="grid min-h-[64px] grid-cols-[42px_auto_minmax(56px,1fr)_minmax(48px,1fr)_56px_38px] items-center border-b border-white/[0.05] px-2 py-2.5">
+      <div className="grid min-h-[64px] gap-x-1.5 grid-cols-[40px_minmax(64px,1fr)_minmax(56px,1fr)_minmax(48px,1fr)_52px_36px] items-center border-b border-white/[0.05] px-2 py-2.5">
         <button
           type="button"
           onClick={() => setIsSetTypeSheetOpen(true)}
@@ -1035,7 +1037,7 @@ function EditableSetRow({
             });
           }}
           disabled={!set.previous?.reps}
-          className="truncate pr-2 text-left text-base font-semibold text-zinc-500 transition enabled:text-emerald-200 enabled:active:scale-95 disabled:cursor-default disabled:text-zinc-600"
+          className="whitespace-normal break-words pr-2 py-1 text-left text-sm font-semibold leading-tight text-zinc-500 transition enabled:text-emerald-200 enabled:active:scale-95 disabled:cursor-default disabled:text-zinc-600"
           aria-label="Use previous set values"
         >
           {previousDisplay}
@@ -1060,11 +1062,11 @@ function EditableSetRow({
                 })
               }
               placeholder={set.previous?.weight ?? "0"}
-              className="h-11 w-full min-w-0 rounded-xl border border-transparent bg-transparent px-1 text-center text-xl font-semibold text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-white/[0.04]"
+              className="h-11 w-full min-w-0 rounded-xl border border-transparent bg-transparent px-1 text-center text-lg font-semibold text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-white/[0.04]"
               aria-label={getWeightInputLabel(exercise.exerciseType)}
             />
           ) : (
-            <span className="text-center text-xl font-semibold text-zinc-700">
+            <span className="text-center text-lg font-semibold text-zinc-700">
               BW
             </span>
           )}
@@ -1082,7 +1084,7 @@ function EditableSetRow({
           value={set.repsValue}
           onChange={(event) => onUpdate({ repsValue: event.target.value })}
           placeholder={set.previous?.reps?.toString() ?? "0"}
-          className="h-11 w-full min-w-0 rounded-xl border border-transparent bg-transparent px-1 text-center text-xl font-semibold text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-white/[0.04]"
+          className="h-11 w-full min-w-0 rounded-xl border border-transparent bg-transparent px-1 text-center text-lg font-semibold text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-white/[0.04]"
           aria-label="Reps"
         />
 
@@ -2014,39 +2016,6 @@ function getDraftSummary(draft: DraftWorkout) {
   };
 }
 
-function formatVolumeSummary(value: number, unit: WeightUnit) {
-  if (value <= 0) {
-    return `0 ${unit}`;
-  }
-
-  return `${formatDecimal(value.toFixed(2))} ${unit}`;
-}
-
-function formatDecimal(value: string) {
-  const parsed = Number(value);
-
-  if (!Number.isFinite(parsed)) {
-    return value;
-  }
-
-  return Number.isInteger(parsed) ? parsed.toString() : parsed.toFixed(2);
-}
-
-function formatPreviousValue(
-  previous: PreviousValue | null,
-  exerciseType: ExerciseType,
-) {
-  if (!previous?.reps) {
-    return "-";
-  }
-
-  if (!hasWeightInput(exerciseType)) {
-    return previous.reps.toString();
-  }
-
-  return `${previous.weight ?? "0.00"} x ${previous.reps}`;
-}
-
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
 
@@ -2077,60 +2046,6 @@ async function readErrorResponse(response: Response) {
   return response.statusText || "Request failed.";
 }
 
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Something went wrong.";
-}
-
-function getDurationSecondsFromInputs(
-  hours: string,
-  minutes: string,
-  secondsAdjustment: string,
-) {
-  const parsedHours = parseNonNegativeInteger(hours);
-  const parsedMinutes = parseNonNegativeInteger(minutes);
-  const parsedSecondsAdjustment = parseSignedInteger(secondsAdjustment);
-
-  if (
-    parsedHours === null ||
-    parsedMinutes === null ||
-    parsedSecondsAdjustment === null ||
-    parsedHours > Math.floor(MAX_WORKOUT_DURATION_SECONDS / 3600) ||
-    parsedMinutes > 59
-  ) {
-    return null;
-  }
-
-  return durationInputsToSeconds(
-    parsedHours,
-    parsedMinutes,
-    parsedSecondsAdjustment,
-  );
-}
-
-function parseNonNegativeInteger(value: string) {
-  const trimmedValue = value.trim();
-
-  if (!/^\d+$/.test(trimmedValue)) {
-    return null;
-  }
-
-  const parsedValue = Number(trimmedValue);
-
-  return Number.isSafeInteger(parsedValue) ? parsedValue : null;
-}
-
-function parseSignedInteger(value: string) {
-  const trimmedValue = value.trim();
-
-  if (!/^-?\d+$/.test(trimmedValue)) {
-    return null;
-  }
-
-  const parsedValue = Number(trimmedValue);
-
-  return Number.isSafeInteger(parsedValue) ? parsedValue : null;
-}
-
 function parseNullableInteger(value: string) {
   const trimmedValue = value.trim();
 
@@ -2143,42 +2058,10 @@ function parseNullableInteger(value: string) {
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
 }
 
-function toLocalDateTimeInputValue(value: string) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  return [
-    date.getFullYear().toString().padStart(4, "0"),
-    "-",
-    (date.getMonth() + 1).toString().padStart(2, "0"),
-    "-",
-    date.getDate().toString().padStart(2, "0"),
-    "T",
-    date.getHours().toString().padStart(2, "0"),
-    ":",
-    date.getMinutes().toString().padStart(2, "0"),
-  ].join("");
-}
-
-function readLocalDateTimeInput(value: string) {
-  const parsedTime = new Date(value).getTime();
-
-  return Number.isNaN(parsedTime) ? null : new Date(parsedTime);
-}
-
 function sortExercises(exercises: Exercise[]) {
   return [...exercises].sort((first, second) => {
     return first.name.localeCompare(second.name);
   });
-}
-
-function normalizeNullableText(value: string) {
-  const trimmedValue = value.trim();
-
-  return trimmedValue.length === 0 ? null : trimmedValue;
 }
 
 function createClientId(prefix: string) {

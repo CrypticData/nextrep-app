@@ -39,7 +39,6 @@ import {
 import {
   MAX_WORKOUT_DURATION_SECONDS,
   clampWorkoutDurationSeconds,
-  durationInputsToSeconds,
   formatRoundedDuration,
   toVisibleDurationParts,
 } from "@/lib/workout-duration";
@@ -54,6 +53,19 @@ import {
 import { HttpError } from "@/lib/http-error";
 import { useSaveQueue } from "@/lib/save-queue";
 import { formatSetLabel, getSetLabelClassName } from "@/lib/set-display";
+import {
+  LBS_PER_KG,
+  convertWeightValue,
+  formatDecimal,
+  formatPreviousValue,
+  formatVolumeSummary,
+  getDurationSecondsFromInputs,
+  getErrorMessage,
+  normalizeNullableText,
+  readLocalDateTimeInput,
+  toLocalDateTimeInputValue,
+} from "@/lib/workout-formatting";
+import type { PreviousValue } from "@/lib/workout-formatting";
 
 type WorkoutScreen = "start" | "live" | "save";
 type WorkoutSession = ActiveWorkoutSession;
@@ -78,11 +90,6 @@ type WorkoutSet = {
   previous: PreviousValue | null;
   created_at: string;
   updated_at: string;
-};
-
-type PreviousValue = {
-  weight: string | null;
-  reps: number | null;
 };
 
 type WorkoutSessionExercise = {
@@ -149,7 +156,6 @@ type SortableHandleProps = {
 
 const SET_SAVE_DEBOUNCE_MS = 350;
 const EXERCISE_NOTES_SAVE_DEBOUNCE_MS = 800;
-const LBS_PER_KG = 2.2046226218;
 const REST_TIMER_ROW_HEIGHT = 40;
 const REST_TIMER_VISIBLE_ROWS = 3;
 const REST_TIMER_PICKER_HEIGHT =
@@ -2203,8 +2209,8 @@ function WorkoutExerciseCard({
       </div>
 
       <div>
-        <div className="grid grid-cols-[38px_auto_minmax(56px,1fr)_minmax(48px,1fr)_50px_34px] items-center border-y border-white/[0.06] bg-[#101010] px-2 py-1.5 text-[10px] font-bold uppercase tracking-[0.09em] text-zinc-500">
-          <span>Set</span>
+        <div className="grid gap-x-1.5 grid-cols-[36px_minmax(64px,1fr)_minmax(56px,1fr)_minmax(48px,1fr)_48px_32px] items-center border-y border-white/[0.06] bg-[#101010] px-2 py-1.5 text-[10px] font-bold uppercase tracking-[0.09em] text-zinc-500">
+          <span className="text-center">Set</span>
           <span className="truncate">Previous</span>
           <button
             type="button"
@@ -2455,7 +2461,7 @@ function WorkoutSetEditorRow({
 
   return (
     <div className={`bg-[#101010] ${savingTone}`}>
-      <div className="grid min-h-[52px] grid-cols-[38px_auto_minmax(56px,1fr)_minmax(48px,1fr)_50px_34px] items-center border-b border-white/[0.05] px-2 py-1.5">
+      <div className="grid min-h-[52px] gap-x-1.5 grid-cols-[36px_minmax(64px,1fr)_minmax(56px,1fr)_minmax(48px,1fr)_48px_32px] items-center border-b border-white/[0.05] px-2 py-1.5">
         <button
           type="button"
           onClick={() => setIsSetTypeSheetOpen(true)}
@@ -2495,7 +2501,7 @@ function WorkoutSetEditorRow({
             });
           }}
           disabled={!set.previous?.reps}
-          className="truncate pr-2 text-left text-base font-semibold text-zinc-500 transition enabled:text-emerald-200 enabled:active:scale-95 disabled:cursor-default disabled:text-zinc-600"
+          className="whitespace-normal break-words pr-2 py-1 text-left text-sm font-semibold leading-tight text-zinc-500 transition enabled:text-emerald-200 enabled:active:scale-95 disabled:cursor-default disabled:text-zinc-600"
           aria-label="Use previous set values"
         >
           {previousDisplay}
@@ -2516,11 +2522,11 @@ function WorkoutSetEditorRow({
               onBlur={() => void commitSetValues()}
               onChange={(event) => setWeightValue(event.target.value)}
               placeholder={set.previous?.weight ?? weightPlaceholder}
-              className="h-9 w-full min-w-0 rounded-lg border border-transparent bg-transparent px-1 text-center text-lg font-semibold text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-white/[0.04]"
+              className="h-9 w-full min-w-0 rounded-lg border border-transparent bg-transparent px-1 text-center text-base font-semibold text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-white/[0.04]"
               aria-label={getWeightInputLabel(exerciseType)}
             />
           ) : (
-            <span className="text-lg font-semibold text-zinc-700">
+            <span className="text-base font-semibold text-zinc-700">
               {weightPlaceholder}
             </span>
           )}
@@ -2539,7 +2545,7 @@ function WorkoutSetEditorRow({
           onBlur={() => void commitSetValues()}
           onChange={(event) => setRepsValue(event.target.value)}
           placeholder={set.previous?.reps?.toString() ?? "0"}
-          className="h-9 w-full min-w-0 rounded-lg border border-transparent bg-transparent px-1 text-center text-lg font-semibold text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-white/[0.04]"
+          className="h-9 w-full min-w-0 rounded-lg border border-transparent bg-transparent px-1 text-center text-base font-semibold text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-emerald-300/40 focus:bg-white/[0.04]"
           aria-label="Reps"
         />
 
@@ -3164,10 +3170,6 @@ function isErrorBody(value: unknown): value is { error: string } {
   );
 }
 
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Something went wrong.";
-}
-
 function formatElapsedWords(totalSeconds: number) {
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -3215,82 +3217,6 @@ function buildDefaultSaveWorkoutDraft(
       volumeUnit: workoutSummary.volumeUnit,
     },
   };
-}
-
-function getDurationSecondsFromInputs(
-  hours: string,
-  minutes: string,
-  secondsAdjustment: string,
-) {
-  const parsedHours = parseNonNegativeInteger(hours);
-  const parsedMinutes = parseNonNegativeInteger(minutes);
-  const parsedSecondsAdjustment = parseSignedInteger(secondsAdjustment);
-
-  if (
-    parsedHours === null ||
-    parsedMinutes === null ||
-    parsedSecondsAdjustment === null ||
-    parsedHours > Math.floor(MAX_WORKOUT_DURATION_SECONDS / 3600) ||
-    parsedMinutes > 59
-  ) {
-    return null;
-  }
-
-  return durationInputsToSeconds(
-    parsedHours,
-    parsedMinutes,
-    parsedSecondsAdjustment,
-  );
-}
-
-function parseNonNegativeInteger(value: string) {
-  const trimmedValue = value.trim();
-
-  if (!/^\d+$/.test(trimmedValue)) {
-    return null;
-  }
-
-  const parsedValue = Number(trimmedValue);
-
-  return Number.isSafeInteger(parsedValue) ? parsedValue : null;
-}
-
-function parseSignedInteger(value: string) {
-  const trimmedValue = value.trim();
-
-  if (!/^-?\d+$/.test(trimmedValue)) {
-    return null;
-  }
-
-  const parsedValue = Number(trimmedValue);
-
-  return Number.isSafeInteger(parsedValue) ? parsedValue : null;
-}
-
-function toLocalDateTimeInputValue(value: string) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  return [
-    date.getFullYear().toString().padStart(4, "0"),
-    "-",
-    (date.getMonth() + 1).toString().padStart(2, "0"),
-    "-",
-    date.getDate().toString().padStart(2, "0"),
-    "T",
-    date.getHours().toString().padStart(2, "0"),
-    ":",
-    date.getMinutes().toString().padStart(2, "0"),
-  ].join("");
-}
-
-function readLocalDateTimeInput(value: string) {
-  const parsedTime = new Date(value).getTime();
-
-  return Number.isNaN(parsedTime) ? null : new Date(parsedTime);
 }
 
 function formatWorkoutNameDate(startedAt: string) {
@@ -3466,14 +3392,6 @@ function getWorkoutSummary(
   };
 }
 
-function formatVolumeSummary(value: number, unit: "lbs" | "kg") {
-  if (value <= 0) {
-    return `0 ${unit}`;
-  }
-
-  return `${formatDecimal(value.toFixed(2))} ${unit}`;
-}
-
 function buildRestTimerOptions() {
   const options: Array<{ label: string; value: number }> = [
     { label: "OFF", value: 0 },
@@ -3525,43 +3443,6 @@ function formatRestDuration(seconds: number | null) {
     : `${minutes}:${remainderSeconds.toString().padStart(2, "0")}`;
 }
 
-function formatDecimal(value: string) {
-  const parsed = Number(value);
-
-  if (!Number.isFinite(parsed)) {
-    return value;
-  }
-
-  return Number.isInteger(parsed) ? parsed.toString() : parsed.toFixed(2);
-}
-
-function formatPreviousValue(
-  previous: PreviousValue | null,
-  exerciseType: ExerciseType,
-) {
-  if (!previous?.reps) {
-    return "-";
-  }
-
-  if (!hasWeightInput(exerciseType)) {
-    return previous.reps.toString();
-  }
-
-  return `${previous.weight ?? "0.00"} x ${previous.reps}`;
-}
-
-function convertWeightValue(
-  value: number,
-  fromUnit: "lbs" | "kg",
-  toUnit: "lbs" | "kg",
-) {
-  if (fromUnit === toUnit) {
-    return value;
-  }
-
-  return fromUnit === "kg" ? value * LBS_PER_KG : value / LBS_PER_KG;
-}
-
 function convertWorkoutSetInputValue(
   value: string | null,
   fromUnit: "lbs" | "kg",
@@ -3596,12 +3477,6 @@ function formatSetSummary(
   }
 
   return `${normalizeNullableText(weightValue) ?? "0"}${weightUnit} x ${formattedReps} reps`;
-}
-
-function normalizeNullableText(value: string) {
-  const trimmedValue = value.trim();
-
-  return trimmedValue.length === 0 ? null : trimmedValue;
 }
 
 function parseNullableInteger(value: string) {
